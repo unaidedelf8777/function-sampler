@@ -15,3 +15,6 @@ pydantic = "^2.6.3"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.packages]
+include = [{ from = "function_sampler", include = ["**/*"] }]
