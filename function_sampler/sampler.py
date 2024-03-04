@@ -4,7 +4,7 @@ from transformers import LogitsProcessor, PreTrainedTokenizer
 import unicodedata
 import logging
 import time
-from config import ToolCallSamplerConfig
+from .config import ToolCallSamplerConfig
 import functools
 
 from .utils import build_masks, tokenize_dicts, bundle_sampling
