@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from typing import List
 from transformers import PreTrainedTokenizer
+import json
 from .utils import *
 # Ensure the necessary token finding functions are imported or defined here
 
@@ -27,11 +28,11 @@ class TokenMap(BaseModel):
     def build(cls, tokenizer: PreTrainedTokenizer):
         instance = cls(
             open_bracket=find_variant_tokens(tokenizer, '{'),
-            close_bracket=cls._calc_fn_tokens('}', 'a', tokenizer),
+            close_bracket=calc_fn_tokens('}', 'a', tokenizer),
             comma=find_variant_tokens(tokenizer, ','),
-            quote=cls._calc_fn_tokens('"', 'a', tokenizer),
-            quote_comma=cls._calc_fn_tokens('",', 'a', tokenizer),
-            eov=cls._calc_fn_tokens('",', 'a', tokenizer) + cls._calc_fn_tokens(',', 'a', tokenizer),
+            quote=calc_fn_tokens('"', 'a', tokenizer),
+            quote_comma=calc_fn_tokens('",', 'a', tokenizer),
+            eov=calc_fn_tokens('",', 'a', tokenizer) + calc_fn_tokens(',', 'a', tokenizer),
             quote_banned=find_tokens_with_char(tokenizer, ["'", '"']),
             list_open=find_variant_tokens(tokenizer, '['),
             list_close=find_variant_tokens(tokenizer, ']'),
@@ -44,6 +45,28 @@ class TokenMap(BaseModel):
             name=tokenizer.encode("name", add_special_tokens=False)
         )
         return instance
+
+    @classmethod
+    def from_json_file(cls, file_path: str = f""):
+        """
+        Load token map data from a JSON file and return an instance of TokenMap.
+
+        Args:
+            file_path (str): The path to the JSON file containing the token map data.
+
+        Returns:
+            TokenMap: An instance of TokenMap initialized with data from the JSON file.
+        """
+        try:
+            with open(file_path, 'r') as file:
+                data = json.load(file)
+            return cls(**data)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON file: {file_path}") from e
+        except FileNotFoundError:
+            raise ValueError(f"File not found: {file_path}")
+        except ValidationError as e:
+            raise ValueError(f"Error validating TokenMap data from {file_path}: {e}")
     
 
 
