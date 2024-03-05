@@ -434,7 +434,7 @@ class ToolCallSampler(LogitsProcessor):
                         )
                         self.next_tokens = (
                             []
-                            + self.json_tokens["close_bracket"][0]
+                            + [self.json_tokens["close_bracket"][0]]
                             + self.tokenizer.encode(
                                 "</function>", add_special_tokens=False
                             )
