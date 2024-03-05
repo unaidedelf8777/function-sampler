@@ -10,4 +10,4 @@ def get_logger(name='function-sampler'):
     Returns:
         logging.Logger: The configured logger instance.
     """
-    return logging.get_logger(name)
+    return logging.getLogger(name)

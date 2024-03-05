@@ -2,8 +2,6 @@
 import logging
 
 logging.basicConfig(
-    filename='app.log',
-    filemode='a',
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     level=logging.INFO
@@ -14,4 +12,4 @@ console_handler = logging.StreamHandler()
 logger.addHandler(console_handler)
 
 from .sampler import ToolCallSampler
-from .config import ToolCallSamplerConfig
+from .config.config import ToolCallSamplerConfig

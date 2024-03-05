@@ -4,7 +4,8 @@ from transformers import LogitsProcessor, PreTrainedTokenizer
 import unicodedata
 import logging
 import time
-from .config import ToolCallSamplerConfig
+from .config.config import ToolCallSamplerConfig
+from .config import TokenMap
 import functools
 
 from .utils import build_masks, tokenize_dicts, bundle_sampling
@@ -40,8 +41,12 @@ class ToolCallSampler(LogitsProcessor):
         self.end_on_function_call = config.end_on_function_call or True
 
         self.vocab_size = len(tokenizer)
-        
-        self.json_tokens = config.json_tokens
+
+        self.json_tokens = (
+            config.json_tokens
+            if config.json_tokens
+            else TokenMap.build(tokenizer=tokenizer)
+        )
 
         #
         # convert json_tokens dict into a dict with values of long tensors, instead of allowed token ids
@@ -67,18 +72,6 @@ class ToolCallSampler(LogitsProcessor):
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
         self.nesting_level = 1
 
-    def _handle_enum(
-        self, options: List[str], scores: torch.FloatTensor
-    ) -> torch.FloatTensor:
-        mask = torch.zeros(self.vocab_size, dtype=torch.bool)
-        for i in options:
-            toks = self.tokenizer.encode(i, add_special_tokens=False)
-            for t in toks:
-                mask[t] = True
-        mask = mask.expand_as(scores)
-        scores[~mask] = -float("inf")
-
-        return scores
 
     def _determine_function(self, start_sequence):
         # Convert the start_sequence list to a tuple for comparison

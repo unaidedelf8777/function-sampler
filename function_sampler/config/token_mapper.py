@@ -18,8 +18,8 @@ class TokenMap(BaseModel):
     quote_banned: List[int] = []
     list_open: List[int] = []
     list_close: List[int] = []
-    int: List[int] = []
-    float: List[int] = []
+    integer_tokens: List[int] = []
+    float_tokens: List[int] = []
     colon: List[int] = []
     space: List[int] = []
     name: List[int] = []
@@ -47,7 +47,7 @@ class TokenMap(BaseModel):
         return instance
 
     @classmethod
-    def from_json_file(cls, file_path: str = f""):
+    def from_json_file(cls, file_path: str):
         """
         Load token map data from a JSON file and return an instance of TokenMap.
 
