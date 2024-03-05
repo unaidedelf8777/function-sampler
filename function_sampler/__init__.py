@@ -1,5 +1,7 @@
 
 import logging
+from .sampler import ToolCallSampler
+from .config.config import ToolCallSamplerConfig
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -11,5 +13,4 @@ logger = logging.getLogger('function-sampler')
 console_handler = logging.StreamHandler()
 logger.addHandler(console_handler)
 
-from .sampler import ToolCallSampler
-from .config.config import ToolCallSamplerConfig
+

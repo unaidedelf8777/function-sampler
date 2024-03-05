@@ -55,7 +55,7 @@ class ToolCallSampler(LogitsProcessor):
             tokenizer=self.tokenizer,
             token_masks=self.token_masks,
             json_tokens=self.json_tokens,
-            vocab_size=self.vocab_size
+            vocab_size=self.vocab_size,
         )
 
         # sampling flags and misc
@@ -73,11 +73,14 @@ class ToolCallSampler(LogitsProcessor):
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
         self.nesting_level = 1
 
+        # Sampling params. these are only used when generating values for params / args.
+        # when not generating a value, they are ignored.
         self.temperature = config.temperature if config.temperature else None
         self.top_p = config.top_p if config.top_p else None
         self.top_k = config.top_k if config.top_k else None
-        self.repetition_penalty = config.repetition_penalty if config.repetition_penalty else None
-
+        self.repetition_penalty = (
+            config.repetition_penalty if config.repetition_penalty else None
+        )
 
     def _determine_function(self, start_sequence):
         # Convert the start_sequence list to a tuple for comparison
@@ -106,7 +109,11 @@ class ToolCallSampler(LogitsProcessor):
 
         new_mask = functools.reduce(
             torch.logical_or,
-            [t for t in token_types if t in self.token_masks],
+            [
+                self.token_masks[t]
+                for t in token_types
+                if self.token_masks[t] is not None
+            ],
             new_mask,
         )
 

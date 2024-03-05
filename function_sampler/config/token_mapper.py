@@ -36,8 +36,8 @@ class TokenMap(BaseModel):
             quote_banned=find_tokens_with_char(tokenizer, ["'", '"']),
             list_open=find_variant_tokens(tokenizer, '['),
             list_close=find_variant_tokens(tokenizer, ']'),
-            int=get_int_tokens(tokenizer),
-            float=get_float_tokens(tokenizer),
+            integer_tokens=get_int_tokens(tokenizer),
+            float_tokens=get_float_tokens(tokenizer),
             colon=find_variant_tokens(tokenizer, ':'),
             space=tokenizer.encode(" ", add_special_tokens=False) +
                   tokenizer.encode("  ", add_special_tokens=False) +
