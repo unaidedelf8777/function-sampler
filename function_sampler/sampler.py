@@ -43,9 +43,9 @@ class ToolCallSampler(LogitsProcessor):
         self.vocab_size = len(tokenizer)
 
         self.json_tokens = (
-            config.json_tokens.dict()
+            config.json_tokens.model_dump()
             if config.json_tokens
-            else TokenMap.build(tokenizer=tokenizer).dict()
+            else TokenMap.build(tokenizer=tokenizer).model_dump()
         )
 
         #
@@ -217,7 +217,7 @@ class ToolCallSampler(LogitsProcessor):
                 )
                 self.next_tokens = next_tokens
                 self.last_open_quote_idx = len(next_tokens)
-                mask = self._allow_tokens(token_ids=[28705], mask=mask)
+                mask = self._allow_tokens(token_types=['space'], mask=mask)
 
             elif len(self.next_tokens) >= 1:
                 tok_id = self.next_tokens.pop(0)
@@ -296,8 +296,8 @@ class ToolCallSampler(LogitsProcessor):
                                 self.completed_args.append(self.arg_type[0])
                                 self.arg_type = None
                                 self.val_started = False
-                                next_token_ids = [28705]
-                                self.next_tokens = [self.json_tokens["quote"][0]]
+                                next_token_ids = self.json_tokens['space']
+                                next_tokens = self.json_tokens['quote']
                                 self.last_open_key_quote_index = (
                                     len(function_tokens) + 1
                                 )
@@ -308,8 +308,9 @@ class ToolCallSampler(LogitsProcessor):
                                     "all args completed? "
                                     + str(self.all_args_completed)
                                 )
-                                if self.required_completed:
-                                    if self.all_args_completed:
+                                if self._is_required_completed():
+                                    if self._is_all_args_completed():
+                                        print("ALL ARGS COMPLETE.")
                                         # must close now
                                         next_token_ids = self.json_tokens[
                                             "close_bracket"
@@ -436,6 +437,7 @@ class ToolCallSampler(LogitsProcessor):
                         )
                         self.next_tokens = (
                             []
+                            + self.json_tokens["close_bracket"][0]
                             + self.tokenizer.encode(
                                 "</function>", add_special_tokens=False
                             )
