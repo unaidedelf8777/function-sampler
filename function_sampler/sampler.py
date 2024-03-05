@@ -1,8 +1,6 @@
 import torch
-from typing import List, Dict, Union
+from typing import List, Dict
 from transformers import LogitsProcessor, PreTrainedTokenizer
-import unicodedata
-import logging
 import time
 from .config.config import ToolCallSamplerConfig
 from .config import TokenMap
@@ -297,7 +295,7 @@ class ToolCallSampler(LogitsProcessor):
                                 self.arg_type = None
                                 self.val_started = False
                                 next_token_ids = self.json_tokens['space']
-                                next_tokens = self.json_tokens['quote']
+                                self.next_tokens = [self.json_tokens["quote"][0]]
                                 self.last_open_key_quote_index = (
                                     len(function_tokens) + 1
                                 )
@@ -308,9 +306,8 @@ class ToolCallSampler(LogitsProcessor):
                                     "all args completed? "
                                     + str(self.all_args_completed)
                                 )
-                                if self._is_required_completed():
-                                    if self._is_all_args_completed():
-                                        print("ALL ARGS COMPLETE.")
+                                if self.required_completed:
+                                    if self.all_args_completed:
                                         # must close now
                                         next_token_ids = self.json_tokens[
                                             "close_bracket"
@@ -421,14 +418,14 @@ class ToolCallSampler(LogitsProcessor):
                             )
 
                             if len(remaining_tokens) > 0:
-                                next_token_id = remaining_tokens.pop(0)
+                                next_token_id = [remaining_tokens.pop(0)]
                                 remaining_tokens += [28705]  # space token
                                 self.next_tokens = remaining_tokens
                             elif len(remaining_tokens) == 0:
-                                next_token_id = 28705  # space token
+                                next_token_id = self.json_tokens['space']
                             # Update mask to allow the next token
                             mask = self._allow_tokens(
-                                token_ids=[next_token_id], mask=mask
+                                token_ids=next_token_id, mask=mask
                             )
 
                     else:
