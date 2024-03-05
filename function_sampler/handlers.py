@@ -30,7 +30,7 @@ def apply_integer(self, function_tokens, mask) -> torch.LongTensor:
 
     if not self.required_completed:
         mask = self._allow_tokens(token_types=["comma"], mask=mask)
-    mask = self._allow_tokens(token_types=["int"], mask=mask)
+    mask = self._allow_tokens(token_types=["integer_tokens"], mask=mask)
     return mask
 
 def apply_float(self, function_tokens, mask) -> torch.LongTensor:
@@ -40,7 +40,7 @@ def apply_float(self, function_tokens, mask) -> torch.LongTensor:
 
     if not self.required_completed:
         mask = self._allow_tokens(token_types=["comma"], mask=mask)
-    mask = self._allow_tokens(token_types=["float"], mask=mask)
+    mask = self._allow_tokens(token_types=["float_tokens"], mask=mask)
     return mask
 
 def apply_constraints(self, arg_key, arg_info, function_tokens, mask):

@@ -35,17 +35,17 @@ class ToolCallSampler(LogitsProcessor):
             token="</function>", ctx_token="a"
         )
 
-        self.logger.debug(self.open_func_token)
-        self.logger.debug(self.close_func_token)
+        logger.debug(self.open_func_token)
+        logger.debug(self.close_func_token)
 
         self.end_on_function_call = config.end_on_function_call or True
 
         self.vocab_size = len(tokenizer)
 
         self.json_tokens = (
-            config.json_tokens
+            config.json_tokens.dict()
             if config.json_tokens
-            else TokenMap.build(tokenizer=tokenizer)
+            else TokenMap.build(tokenizer=tokenizer).dict()
         )
 
         #
@@ -55,6 +55,7 @@ class ToolCallSampler(LogitsProcessor):
             tokenizer=self.tokenizer,
             token_masks=self.token_masks,
             json_tokens=self.json_tokens,
+            vocab_size=self.vocab_size
         )
 
         # sampling flags and misc
@@ -72,6 +73,11 @@ class ToolCallSampler(LogitsProcessor):
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
         self.nesting_level = 1
 
+        self.temperature = config.temperature if config.temperature else None
+        self.top_p = config.top_p if config.top_p else None
+        self.top_k = config.top_k if config.top_k else None
+        self.repetition_penalty = config.repetition_penalty if config.repetition_penalty else None
+
 
     def _determine_function(self, start_sequence):
         # Convert the start_sequence list to a tuple for comparison
@@ -83,7 +89,7 @@ class ToolCallSampler(LogitsProcessor):
             for key, value in self.function_maps.items()
             if key[: len(start_tuple)] == start_tuple
         }
-        self.logger.debug(matching_items)
+        logger.debug(matching_items)
         if matching_items:
             return matching_items
         else:
@@ -260,7 +266,7 @@ class ToolCallSampler(LogitsProcessor):
                     current_key_seq = function_tokens[
                         self.last_open_key_quote_index + 1 :
                     ]
-                    self.logger.debug(self.tokenizer.decode(current_key_seq))
+                    logger.debug(self.tokenizer.decode(current_key_seq))
                     current_key_seq = list(current_key_seq)
                     logger.debug("Current SEQ: " + str(current_key_seq))
 
@@ -273,12 +279,12 @@ class ToolCallSampler(LogitsProcessor):
                             function_tokens[-1] in self.json_tokens["eov"]
                             and self.val_started
                         ):
-                            self.logger.debug("## Value identified as finished ##")
+                            logger.debug("## Value identified as finished ##")
                             if (
                                 self.arg_type == "string"
                                 and function_tokens[-1] in self.json_tokens["comma"]
                             ):
-                                self.logger.debug("# Nevermind. ##")
+                                logger.debug("# Nevermind. ##")
                             else:
                                 self.completed_args.append(self.arg_type[0])
                                 self.arg_type = None
@@ -334,7 +340,7 @@ class ToolCallSampler(LogitsProcessor):
                             if len(current_key_seq) == 0
                             or list(key[: len(current_key_seq)]) == current_key_seq
                         ]
-                        self.logger.debug("Possible keys: " + str(possible_keys))
+                        logger.debug("Possible keys: " + str(possible_keys))
 
                         if len(possible_keys) > 1:
                             logger.debug("possible keys available")

@@ -89,7 +89,7 @@ def get_float_tokens(tokenizer):
                 allowed_token_ids.append(token_id)
   return allowed_token_ids
 
-def calc_fn_tokens(self, token, ctx_token, tokenizer, nested=False):
+def calc_fn_tokens(token, ctx_token, tokenizer, nested=False):
 
       ctx_tok = tokenizer.encode(ctx_token, add_special_tokens=False)
 
