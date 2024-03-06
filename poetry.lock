@@ -538,6 +538,17 @@ files = [
 ]
 
 [[package]]
+name = "interegular"
+version = "0.3.3"
+description = "a regex intersection checker"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "interegular-0.3.3-py37-none-any.whl", hash = "sha256:b0c07007d48c89d6d19f7204972d369b2a77222722e126b6aa63aa721dc3b19c"},
+    {file = "interegular-0.3.3.tar.gz", hash = "sha256:d9b697b21b34884711399ba0f0376914b81899ce670032486d0d048344a76600"},
+]
+
+[[package]]
 name = "llvmlite"
 version = "0.42.0"
 description = "lightweight wrapper around basic LLVM functionality"
@@ -1973,4 +1984,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "22357c6f6c0bc2894098674eeafff793b69565b5b18e84cfa5ecf8ab3cc52baa"
+content-hash = "d420bffdef37da487bf659e79fc4ebee8123d663c13e4f66a39d9bbef6d8f45b"

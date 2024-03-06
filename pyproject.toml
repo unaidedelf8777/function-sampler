@@ -19,6 +19,7 @@ cloudpickle = "^3.0.0"
 numba = "^0.59.0"
 datasets = "^2.18.0"
 referencing = "^0.33.0"
+interegular = "^0.3.3"
 
 
 [build-system]
