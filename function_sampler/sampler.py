@@ -173,38 +173,6 @@ class ToolCallSampler(LogitsProcessor):
 
         return key_value_pairs
 
-    def _is_required_completed(self):
-        if self.identified_function is None:
-            self.required_completed = False
-            return False
-        if self.completed_args == self.identified_function["parameters"]["required"]:
-            self.required_completed = True
-            return True
-        elif self.arg_type:
-            if (
-                self.completed_args + list(self.arg_type[0])
-                == self.identified_function["parameters"]["required"]
-            ):
-                self.required_completed = True
-                return True
-        else:
-            self.required_completed = False
-            return False
-
-    def _is_all_args_completed(self):
-        if self.identified_function is None:
-            self.all_args_completed = False
-            return False
-        elif self.arg_type:
-            if (
-                self.completed_args + list(self.arg_type[0])
-                == self.identified_function["parameters"]["properties"].keys()
-            ):
-                self.all_args_completed = True
-                return True
-        else:
-            self.all_args_completed = False
-            return False
 
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
@@ -213,8 +181,6 @@ class ToolCallSampler(LogitsProcessor):
         function_tokens = input_ids[0][46:]
 
         mask = torch.zeros(self.vocab_size, dtype=torch.bool)
-        self._is_required_completed()
-        self._is_all_args_completed()
 
         if function_tokens is not False:
             tokens_len = len(function_tokens)
