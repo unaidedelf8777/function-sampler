@@ -80,6 +80,7 @@ class ToolCallSampler(LogitsProcessor):
         self.fsm_state = FSMState(0)
         self.fsm_seq_start_idx = None
         self.generation_finished = False
+        self.val_started = False
 
         # Sampling params. these are only used when generating values for params / args.
         # when not generating a value, they are ignored.
