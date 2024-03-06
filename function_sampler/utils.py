@@ -33,51 +33,18 @@ def tokenize_dicts(input_dicts, tokenizer,  exempt_keys=["required", "name", "ty
 
     tokenized_dicts = {}
     for input_dict in input_dicts:
-        tokenized_dict = {}
-
-        for key, value in input_dict.items():
-            if key in exempt_keys:
-                if key == 'parameters':
-                    # Tokenize parameter names and their descriptions within 'parameters'
-                    tokenized_params = {}
-                    for param_name, param_info in value['properties'].items():
-                        # Tokenize the parameter name
-                        param_name_tokens = tuple(tokenizer.encode(
-                            '"' + param_name + '":', add_special_tokens=False)[1:])
-                        # You might also want to tokenize certain values, like descriptions
-                        # Here, we're copying the param_info as is, but you could tokenize certain fields as needed
-                        tokenized_params[param_name_tokens] = param_info
-                    required = [tuple(tokenizer.encode(
-                        '"' + v + '":', add_special_tokens=False)[1:]) for v in value['required']]
-                    tokenized_dict['parameters'] = {
-                        'type': 'object', 'properties': tokenized_params, 'required': required}
-
-                else:
-                    tokenized_dict[key] = value
-            else:
-                # Recursively process nested dictionaries
-                if isinstance(value, dict):
-                    tokenized_dict[key] = tokenize_dicts(
-                        [value], exempt_keys, root=False)
-                else:
-                    # Tokenizing the key
-                    tokenized_key = tuple(tokenizer.encode(
-                        '"' + key + '":', add_special_tokens=False)[1:])
-                    tokenized_dict[tokenized_key] = value
-        if root:
-            # Tokenizing the 'name' key for the main dictionary key
-            name_str = '"' + input_dict['name'] + '",'
-            name_str = name_str.strip()
-            # Tokenizers are wierd. we need to encode it for its final representation ( after the model "generates" it ),
-            # otherwise decoding won't work because of the causal encoding ( tokens can only see tokens before them ).
-            # So if a single quote isn't a thing for you, you're out of luck, and the entire lib will explode :)
-            name_tokens = tokenizer.encode(
-                name_str, add_special_tokens=False)[1:]
-            logger.debug(tokenizer.decode(name_tokens))
-            name_tuple = tuple(name_tokens)
-            tokenized_dicts[name_tuple] = tokenized_dict
-        else:
-            return tokenized_dict
+        
+        # Tokenizing the 'name' key for the main dictionary key
+        name_str = '"' + input_dict['name'] + '",'
+        name_str = name_str.strip()
+        # Tokenizers are wierd. we need to encode it for its final representation ( after the model "generates" it ),
+        # otherwise decoding won't work because of the causal encoding ( tokens can only see tokens before them ).
+        # So if a single quote isn't a thing for you, you're out of luck, and the entire lib will explode :)
+        name_tokens = tokenizer.encode(
+            name_str, add_special_tokens=False)[1:]
+        logger.debug(tokenizer.decode(name_tokens))
+        name_tuple = tuple(name_tokens)
+        tokenized_dicts[name_tuple] = input_dict['parameters']
 
     return tokenized_dicts
 

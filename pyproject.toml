@@ -14,6 +14,11 @@ readme = "README.md"
 python = "^3.10"
 transformers = "^4.38.2"
 pydantic = "^2.6.3"
+diskcache = "^5.6.3"
+cloudpickle = "^3.0.0"
+numba = "^0.59.0"
+datasets = "^2.18.0"
+referencing = "^0.33.0"
 
 
 [build-system]

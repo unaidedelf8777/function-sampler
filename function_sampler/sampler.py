@@ -1,5 +1,5 @@
 import torch
-from typing import List, Dict
+from typing import List, Dict, Union, Any
 from transformers import LogitsProcessor, PreTrainedTokenizer
 import time
 from .config.config import ToolCallSamplerConfig
@@ -11,6 +11,9 @@ from .config.utils import calc_fn_tokens
 from .handlers import apply_constraints
 from .logger import get_logger
 
+from .fsm import RegexFSM, FsmTokenizer, FSMState
+from .json import build_regex_from_schema
+
 
 logger = get_logger()
 
@@ -20,11 +23,21 @@ class ToolCallSampler(LogitsProcessor):
         self,
         tokenizer: PreTrainedTokenizer,
         functions: List[Dict] = None,
-        config: ToolCallSamplerConfig = None,
+        config: Union[ToolCallSamplerConfig, Dict[str, Any]] = None,
+        **kwargs,
     ):
         self.tokenizer = tokenizer
         self.functions = functions
-        self.config = config or ToolCallSamplerConfig()
+
+        # If config is a dictionary or None, parse it with Pydantic model
+        if isinstance(config, dict) or config is None:
+            config = ToolCallSamplerConfig(**config or {}, **kwargs)
+        elif not isinstance(config, ToolCallSamplerConfig):
+            raise ValueError(
+                "config must be a ToolCallSamplerConfig instance or a dictionary"
+            )
+
+        self.config = config
 
         self.open_func_token = self.config.open_func_token or calc_fn_tokens(
             token="<function>", ctx_token="a"
@@ -36,13 +49,13 @@ class ToolCallSampler(LogitsProcessor):
         logger.debug(self.open_func_token)
         logger.debug(self.close_func_token)
 
-        self.end_on_function_call = config.end_on_function_call or True
+        self.end_on_function_call = self.config.end_on_function_call
 
         self.vocab_size = len(tokenizer)
 
         self.json_tokens = (
-            config.json_tokens.model_dump()
-            if config.json_tokens
+            self.config.json_tokens.model_dump()
+            if self.config.json_tokens
             else TokenMap.build(tokenizer=tokenizer).model_dump()
         )
 
@@ -57,19 +70,16 @@ class ToolCallSampler(LogitsProcessor):
         )
 
         # sampling flags and misc
-        self.current_call_stage = None  # either 'fn_name' or 'arguments'
         self.identified_function = None
-        # tells what tokens to ban. for instance, if it is type 'int' or 'float', then we dont allow non digits.
-        self.arg_type = None
-        self.completed_args = []
+
         self.last_open_key_quote_index = -1
-        self.val_started = False
-        self.val_first_val_token = False
-        self.required_completed = False
-        self.all_args_completed = False
 
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
-        self.nesting_level = 1
+
+        self.fsm = None
+        self.fsm_state = FSMState(0)
+        self.fsm_seq_start_idx = None
+        self.generation_finished = False
 
         # Sampling params. these are only used when generating values for params / args.
         # when not generating a value, they are ignored.
@@ -215,7 +225,7 @@ class ToolCallSampler(LogitsProcessor):
                 )
                 self.next_tokens = next_tokens
                 self.last_open_quote_idx = len(next_tokens)
-                mask = self._allow_tokens(token_types=['space'], mask=mask)
+                mask = self._allow_tokens(token_types=["space"], mask=mask)
 
             elif len(self.next_tokens) >= 1:
                 tok_id = self.next_tokens.pop(0)
@@ -244,200 +254,35 @@ class ToolCallSampler(LogitsProcessor):
                         self.next_tokens = (
                             tokens[len(current_val_seq) + 1 :]
                             + self.tokenizer.encode(
-                                '", "arguments": {"', add_special_tokens=False
+                                '", "arguments": ', add_special_tokens=False
                             )[1:]
                         )
                         next_token = tokens[len(current_val_seq)]
                         self.nesting_level = 2
-                        self.last_open_key_quote_index = (
-                            len(self.next_tokens) + tokens_len
-                        )
+                        self.fsm_seq_start_idx = len(self.next_tokens) + tokens_len
                         mask = self._allow_tokens(token_ids=[next_token], mask=mask)
 
                 elif self.identified_function is not None:
-                    logger.debug("LOG: Identified function")
-                    required_args = [
-                        item
-                        for item in self.identified_function["parameters"]["required"]
-                        if item not in self.completed_args
-                    ]
-                    optional_args = [
-                        item
-                        for item in self.identified_function["parameters"][
-                            "properties"
-                        ].keys()
-                        if item not in required_args and item not in self.completed_args
-                    ]
-                    current_key_seq = function_tokens[
-                        self.last_open_key_quote_index + 1 :
-                    ]
-                    logger.debug(self.tokenizer.decode(current_key_seq))
-                    current_key_seq = list(current_key_seq)
-                    logger.debug("Current SEQ: " + str(current_key_seq))
-
-                    # if we are already generating a arg, then we must not start another one.
-                    # if we are ready for the next arg, then self.arg_type will be None
-                    if self.arg_type is not None:
-                        logger.debug("#### Entered value sampling stage ####")
-
-                        if (
-                            function_tokens[-1] in self.json_tokens["eov"]
-                            and self.val_started
-                        ):
-                            logger.debug("## Value identified as finished ##")
-                            if (
-                                self.arg_type == "string"
-                                and function_tokens[-1] in self.json_tokens["comma"]
-                            ):
-                                logger.debug("# Nevermind. ##")
-                            else:
-                                self.completed_args.append(self.arg_type[0])
-                                self.arg_type = None
-                                self.val_started = False
-                                next_token_ids = self.json_tokens['space']
-                                self.next_tokens = [self.json_tokens["quote"][0]]
-                                self.last_open_key_quote_index = (
-                                    len(function_tokens) + 1
-                                )
-                                logger.debug(
-                                    "Required completed" + str(self.required_completed)
-                                )
-                                logger.debug(
-                                    "all args completed? "
-                                    + str(self.all_args_completed)
-                                )
-                                if self.required_completed:
-                                    if self.all_args_completed:
-                                        # must close now
-                                        next_token_ids = self.json_tokens[
-                                            "close_bracket"
-                                        ]
-                                        self.next_tokens = [
-                                            self.close_func_token,
-                                            self.tokenizer.eos_token_id,
-                                        ]
-                                    # the model is allowed to not give more params
-                                    else:
-                                        next_token_ids.append(
-                                            self.json_tokens["close_bracket"]
-                                        )
-                                mask = self._allow_tokens(
-                                    token_ids=next_token_ids, mask=mask
-                                )
-
-                        else:
-                            arg_key, arg_info = self.arg_type
-                            logger.debug(
-                                "# value not finished. searching for correct case #"
-                            )
-                            mask = apply_constraints(
-                                self, arg_key, arg_info, function_tokens, mask
-                            )
-
-                    elif len(required_args) >= 1:
-                        logger.debug("required args not fulfilled")
-                        key_tuple = tuple(current_key_seq)
-                        logger.debug("Key tuple: " + str(key_tuple))
-                        logger.debug(required_args)
-                        possible_keys = [
-                            key
-                            for key in required_args
-                            if len(current_key_seq) == 0
-                            or list(key[: len(current_key_seq)]) == current_key_seq
-                        ]
-                        logger.debug("Possible keys: " + str(possible_keys))
-
-                        if len(possible_keys) > 1:
-                            logger.debug("possible keys available")
-
-                            next_token_ids = set()
-                            key_seq_len = len(current_key_seq)
-                            for seq in possible_keys:
-                                next_token_ids.update([seq[key_seq_len]])
-                            mask = self._allow_tokens(
-                                token_ids=list(next_token_ids), mask=mask
-                            )
-
-                        elif len(possible_keys) == 1:
-                            self.arg_type = (
-                                possible_keys[0],
-                                self.identified_function["parameters"]["properties"][
-                                    possible_keys[0]
-                                ],
-                            )
-
-                            remaining_tokens = list(
-                                possible_keys[0][len(current_key_seq) :]
-                            )
-
-                            if len(remaining_tokens) > 0:
-                                next_token_id = remaining_tokens.pop(0)
-                                remaining_tokens += [28705]  # space token
-                                self.next_tokens = remaining_tokens
-                            elif len(remaining_tokens) == 0:
-                                next_token_id = 28705  # space token
-                            # Update mask to allow the next token
-                            mask = self._allow_tokens(
-                                token_ids=[next_token_id], mask=mask
-                            )
-
-                    elif len(required_args) == 0 and len(optional_args) >= 1:
-                        logger.debug("required args are fulfilled")
-                        key_tuple = tuple(current_key_seq)
-                        logger.debug("Key tuple: " + str(key_tuple))
-                        logger.debug(required_args)
-                        possible_keys = [
-                            key
-                            for key in optional_args
-                            if len(current_key_seq) == 0
-                            or list(key[: len(current_key_seq)]) == current_key_seq
-                        ]
-                        logger.debug("Possible keys: " + str(possible_keys))
-
-                        if len(possible_keys) > 1:
-                            logger.debug("possible keys available")
-
-                            next_token_ids = set()
-                            key_seq_len = len(current_key_seq)
-                            for seq in possible_keys:
-                                next_token_ids.update([seq[key_seq_len]])
-                            mask = self._allow_tokens(
-                                token_ids=list(next_token_ids), mask=mask
-                            )
-
-                        elif len(possible_keys) == 1:
-                            self.arg_type = (
-                                possible_keys[0],
-                                self.identified_function["parameters"]["properties"][
-                                    possible_keys[0]
-                                ],
-                            )
-
-                            remaining_tokens = list(
-                                possible_keys[0][len(current_key_seq) :]
-                            )
-
-                            if len(remaining_tokens) > 0:
-                                next_token_id = [remaining_tokens.pop(0)]
-                                remaining_tokens += [28705]  # space token
-                                self.next_tokens = remaining_tokens
-                            elif len(remaining_tokens) == 0:
-                                next_token_id = self.json_tokens['space']
-                            # Update mask to allow the next token
-                            mask = self._allow_tokens(
-                                token_ids=next_token_id, mask=mask
-                            )
-
-                    else:
-                        mask = self._allow_tokens(
-                            token_types=["close_bracket"], mask=mask
+                    if self.fsm is None:
+                        regex = build_regex_from_schema(self.identified_function)
+                        self.fsm = RegexFSM(
+                            regex, FsmTokenizer(tokenizer=self.tokenizer)
                         )
+
+                    last_token = input_ids[0][-1]
+                    self.fsm_state = self.fsm.next_state(
+                        self.fsm_state, int(last_token)
+                    )
+                    allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
+
+                    mask = self._allow_tokens(token_ids=allowed_tokens)
+                    self.val_started = True
+
+                    if self.fsm.is_final_state():
+                        mask = self._allow_tokens(token_types=["close_bracket"])
                         self.next_tokens = (
-                            []
-                            + [self.json_tokens["close_bracket"][0]]
-                            + self.tokenizer.encode(
-                                "</function>", add_special_tokens=False
-                            )
+                            [self.json_tokens["close_bracket"][0]]
+                            + self.close_func_token
                             + [self.tokenizer.eos_token_id]
                         )
 
