@@ -1,19 +1,18 @@
-import torch
-from typing import List, Dict, Union, Any
-from transformers import LogitsProcessor, PreTrainedTokenizer
-import time
-from .config.config import ToolCallSamplerConfig
-from .config import TokenMap
 import functools
+import time
+from json import dumps as json_dumps
+from typing import Any, Dict, List, Union
 
-from .utils import build_masks, tokenize_dicts, bundle_sampling
+import torch
+from transformers import LogitsProcessor, PreTrainedTokenizer
+
+from .config import TokenMap
+from .config.config import ToolCallSamplerConfig
 from .config.utils import calc_fn_tokens
-from .handlers import apply_constraints
-from .logger import get_logger
-
-from .fsm import RegexFSM, FsmTokenizer, FSMState
+from .fsm import FSMState, FsmTokenizer, RegexFSM
 from .json import build_regex_from_schema
-
+from .logger import get_logger
+from .utils import build_masks, bundle_sampling, tokenize_dicts
 
 logger = get_logger()
 
@@ -80,8 +79,9 @@ class ToolCallSampler(LogitsProcessor):
         self.fsm_state = FSMState(0)
         self.fsm_seq_start_idx = None
         self.generation_finished = False
-        self.val_started = False
-
+        self.do_sample = False
+        self.last_open_quote_idx = -1
+        self.first_fsm_token = False
         # Sampling params. these are only used when generating values for params / args.
         # when not generating a value, they are ignored.
         self.temperature = config.temperature if config.temperature else None
@@ -173,7 +173,6 @@ class ToolCallSampler(LogitsProcessor):
 
         return key_value_pairs
 
-
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
@@ -211,6 +210,7 @@ class ToolCallSampler(LogitsProcessor):
                         for seq in tuples:
                             list_seq = list(seq[0])
                             next_token_ids.update([list_seq[len(current_val_seq)]])
+                        self.do_sample = True
                         next_token_ids = list(next_token_ids)
                         mask = self._allow_tokens(token_ids=next_token_ids, mask=mask)
 
@@ -218,6 +218,8 @@ class ToolCallSampler(LogitsProcessor):
                         t = self._collect_key_tuples(possible_next_tokens)
                         self.identified_function = t[0][1]
                         tokens = list(t[0][0])
+                        # no reason to sample one token.
+                        self.do_sample = False
                         self.next_tokens = (
                             tokens[len(current_val_seq) + 1 :]
                             + self.tokenizer.encode(
@@ -231,32 +233,39 @@ class ToolCallSampler(LogitsProcessor):
 
                 elif self.identified_function is not None:
                     if self.fsm is None:
-                        regex = build_regex_from_schema(self.identified_function)
+                        regex = build_regex_from_schema(
+                            json_dumps(self.identified_function)
+                        )
                         self.fsm = RegexFSM(
                             regex, FsmTokenizer(tokenizer=self.tokenizer)
                         )
+                        self.first_fsm_token = True
 
-                    last_token = input_ids[0][-1]
-                    self.fsm_state = self.fsm.next_state(
-                        self.fsm_state, int(last_token)
-                    )
-                    allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
+                    if self.first_fsm_token:
+                        allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
+                        self.first_fsm_token = False
+                    else:
+                        last_token = input_ids[0][-1]
+                        self.fsm_state = self.fsm.next_state(
+                            self.fsm_state, int(last_token)
+                        )
+                        allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
 
-                    mask = self._allow_tokens(token_ids=allowed_tokens)
-                    self.val_started = True
-
-                    if self.fsm.is_final_state():
+                    if self.fsm.is_final_state(self.fsm_state):
                         mask = self._allow_tokens(token_types=["close_bracket"])
                         self.next_tokens = (
                             [self.json_tokens["close_bracket"][0]]
                             + self.close_func_token
                             + [self.tokenizer.eos_token_id]
                         )
+                    else:
+                        mask = self._allow_tokens(token_ids=allowed_tokens)
+                        self.do_sample = True
 
             mask = mask.expand_as(scores)
             scores[~mask] = -float("Inf")
 
-            if self.val_started:
+            if self.do_sample:
                 bundle_sampling(
                     scores,
                     input_ids,

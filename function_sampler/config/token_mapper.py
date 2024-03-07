@@ -5,10 +5,12 @@ import json
 from .utils import *
 # Ensure the necessary token finding functions are imported or defined here
 
+
 class TokenMap(BaseModel):
     """
     Default token mappings for Mistral, Mixtral, and derivatives.
     """
+
     open_bracket: List[int] = []
     close_bracket: List[int] = []
     comma: List[int] = []
@@ -27,22 +29,25 @@ class TokenMap(BaseModel):
     @classmethod
     def build(cls, tokenizer: PreTrainedTokenizer):
         instance = cls(
-            open_bracket=find_variant_tokens(tokenizer, '{'),
-            close_bracket=calc_fn_tokens('}', 'a', tokenizer),
-            comma=find_variant_tokens(tokenizer, ','),
-            quote=calc_fn_tokens('"', 'a', tokenizer),
-            quote_comma=calc_fn_tokens('",', 'a', tokenizer),
-            eov=calc_fn_tokens('",', 'a', tokenizer) + calc_fn_tokens(',', 'a', tokenizer),
+            open_bracket=find_variant_tokens(tokenizer, "{"),
+            close_bracket=calc_fn_tokens("}", "a", tokenizer),
+            comma=find_variant_tokens(tokenizer, ","),
+            quote=calc_fn_tokens('"', "a", tokenizer),
+            quote_comma=calc_fn_tokens('",', "a", tokenizer),
+            eov=calc_fn_tokens('",', "a", tokenizer)
+            + calc_fn_tokens(",", "a", tokenizer),
             quote_banned=find_tokens_with_char(tokenizer, ["'", '"']),
-            list_open=find_variant_tokens(tokenizer, '['),
-            list_close=find_variant_tokens(tokenizer, ']'),
+            list_open=find_variant_tokens(tokenizer, "["),
+            list_close=find_variant_tokens(tokenizer, "]"),
             integer_tokens=get_int_tokens(tokenizer),
             float_tokens=get_float_tokens(tokenizer),
-            colon=find_variant_tokens(tokenizer, ':'),
-            space=tokenizer.encode(" ", add_special_tokens=False) +
-                  tokenizer.encode("  ", add_special_tokens=False) +
-                  [tokenizer.encode("> ", add_special_tokens=False)[1]] if len(tokenizer.encode("> ", add_special_tokens=False)) == 2 else [],
-            name=tokenizer.encode("name", add_special_tokens=False)
+            colon=find_variant_tokens(tokenizer, ":"),
+            space=tokenizer.encode(" ", add_special_tokens=False)
+            + tokenizer.encode("  ", add_special_tokens=False)
+            + [tokenizer.encode("> ", add_special_tokens=False)[1]]
+            if len(tokenizer.encode("> ", add_special_tokens=False)) == 2
+            else [],
+            name=tokenizer.encode("name", add_special_tokens=False),
         )
         return instance
 
@@ -58,7 +63,7 @@ class TokenMap(BaseModel):
             TokenMap: An instance of TokenMap initialized with data from the JSON file.
         """
         try:
-            with open(file_path, 'r') as file:
+            with open(file_path, "r") as file:
                 data = json.load(file)
             return cls(**data)
         except json.JSONDecodeError as e:
@@ -67,12 +72,8 @@ class TokenMap(BaseModel):
             raise ValueError(f"File not found: {file_path}")
         except ValidationError as e:
             raise ValueError(f"Error validating TokenMap data from {file_path}: {e}")
-    
 
 
 class MistralTokenMap(TokenMap):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-    
-
-    

@@ -23,10 +23,12 @@ def get_cache():
     environment variable.
 
     """
-    from function_sampler._version import __version__ as sampler_version  # type: ignore
+    from function_sampler import __version__ as sampler_version  # type: ignore
 
     home_dir = os.path.expanduser("~")
-    cache_dir = os.environ.get("FUNCTION_SAMPLER_CACHE_DIR", f"{home_dir}/.cache/function_sampler")
+    cache_dir = os.environ.get(
+        "FUNCTION_SAMPLER_CACHE_DIR", f"{home_dir}/.cache/function_sampler"
+    )
     memory = Cache(cache_dir, eviction_policy="none", cull_limit=0)
 
     # ensure if version upgrade occurs, old cache is pruned
