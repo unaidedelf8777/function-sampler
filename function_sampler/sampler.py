@@ -179,11 +179,23 @@ class ToolCallSampler(LogitsProcessor):
 
         return key_value_pairs
 
+    def _check_for_function_call(self, input_ids):
+        input_ids = input_ids[0]
+        inputs_string = self.tokenizer.decode(input_ids[-15:])
+
+        if inputs_string.strip().endswith(self.open_func_token):
+            return True
+        else:
+            return False
+
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
         start_time = time.time()
-        function_tokens = input_ids[0][46:]
+        if self._check_for_function_call(input_ids):
+            function_tokens = []
+        else:
+            function_tokens = False
 
         mask = torch.zeros(self.vocab_size, dtype=torch.bool)
 
