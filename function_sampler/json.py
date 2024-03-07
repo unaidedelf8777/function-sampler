@@ -9,33 +9,7 @@ from referencing import Registry, Resource
 from referencing._core import Resolver
 from referencing.jsonschema import DRAFT202012
 
-STRING_INNER = r'(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)'
-STRING = f'"{STRING_INNER}*"'
-INTEGER = r"(0|[1-9][0-9]*)"
-NUMBER = rf"(-)?({INTEGER})(\.[0-9]+)?([eE][+-][0-9]+)?"
-BOOLEAN = r"(true|false)"
-NULL = r"null"
-WHITESPACE = r"[\n ]*"
-
-type_to_regex = {
-    "string": STRING,
-    "integer": INTEGER,
-    "number": NUMBER,
-    "boolean": BOOLEAN,
-    "null": NULL,
-}
-
-DATE_TIME = r"(-?(?:[1-9][0-9]*)?[0-9]{4})-(1[0-2]|0[1-9])-(3[01]|0[1-9]|[12][0-9])T(2[0-3]|[01][0-9]):([0-5][0-9]):([0-5][0-9])(\.[0-9]{3})?(Z)?"
-DATE = r"(?:\d{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[1-2][0-9]|3[0-1])"
-TIME = r"(2[0-3]|[01][0-9]):([0-5][0-9]):([0-5][0-9])(\\.[0-9]+)?(Z)?"
-UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-
-format_to_regex = {
-    "uuid": UUID,
-    "date-time": DATE_TIME,
-    "date": DATE,
-    "time": TIME,
-}
+from .regex_constants import *  # noqa: F403
 
 
 def build_regex_from_schema(schema: str, whitespace_pattern: Optional[str] = None):
@@ -256,14 +230,9 @@ def to_regex(
                     return rf'("{pattern}")'
             elif "format" in instance:
                 format = instance["format"]
-                if format == "date-time":
-                    return format_to_regex["date-time"]
-                elif format == "uuid":
-                    return format_to_regex["uuid"]
-                elif format == "date":
-                    return format_to_regex["date"]
-                elif format == "time":
-                    return format_to_regex["time"]
+                reg = format_to_regex.get(str(format), None)
+                if reg is not None:
+                    return reg
                 else:
                     raise NotImplementedError(
                         f"Format {format} is not supported by Outlines"

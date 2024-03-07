@@ -38,11 +38,17 @@ class ToolCallSampler(LogitsProcessor):
 
         self.config = config
 
-        self.open_func_token = self.config.open_func_token or calc_fn_tokens(
-            token="<function>", ctx_token="a"
+        self.open_func_token = (
+            self.config.open_func_token if self.config.open_func_token else "<function>"
         )
-        self.close_func_token = self.config.close_func_token or calc_fn_tokens(
-            token="</function>", ctx_token="a"
+        self.close_func_token = (
+            self.config.open_func_token
+            if self.config.open_func_token
+            else "</function>"
+        )
+
+        self.open_func_token_length = len(
+            self.tokenizer.encode(self.open_func_token, add_special_tokens=False)
         )
 
         logger.debug(self.open_func_token)
