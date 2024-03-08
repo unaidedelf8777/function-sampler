@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Union
 import torch
 from transformers import LogitsProcessor, PreTrainedTokenizer
 
+from .cache import cache
 from .config import TokenMap
 from .config.config import ToolCallSamplerConfig
-from .config.utils import calc_fn_tokens
 from .fsm import FSMState, FsmTokenizer, RegexFSM
 from .json import build_regex_from_schema
 from .logger import get_logger
@@ -81,6 +81,7 @@ class ToolCallSampler(LogitsProcessor):
 
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
 
+        self.next_tokens = []
         self.fsm = None
         self.fsm_state = FSMState(0)
         self.fsm_seq_start_idx = None
@@ -88,6 +89,7 @@ class ToolCallSampler(LogitsProcessor):
         self.do_sample = False
         self.last_open_quote_idx = -1
         self.first_fsm_token = False
+        self.input_ids_split_idx = None
         # Sampling params. these are only used when generating values for params / args.
         # when not generating a value, they are ignored.
         self.temperature = config.temperature if config.temperature else None
@@ -114,55 +116,51 @@ class ToolCallSampler(LogitsProcessor):
             # Return None if no matching items are found
             return None
 
+    @cache
     def _allow_tokens(
         self, token_types: List[str] = [], token_ids: List[int] = [], mask=None
     ):
         """
         Returns a mask, initialized with False, with the specified token types and token IDs allowed.
         """
-        new_mask = torch.full((self.vocab_size,), False, dtype=torch.bool)
+        if mask is None:
+            mask = torch.full((self.vocab_size,), False, dtype=torch.bool)
 
-        new_mask = functools.reduce(
-            torch.logical_or,
-            [
-                self.token_masks[t]
-                for t in token_types
-                if self.token_masks[t] is not None
-            ],
-            new_mask,
-        )
+        if token_types:
+            # Pre-compute a combined mask for all specified token types
+            combined_type_mask = torch.zeros_like(mask)
+            for t in token_types:
+                if t in self.token_masks:
+                    combined_type_mask |= self.token_masks[t]
+            mask |= combined_type_mask
 
-        for id in token_ids:
-            new_mask[id] = True
-
-        if mask is not None:
-            mask = torch.logical_or(mask, new_mask)
-        else:
-            mask = new_mask
+        if token_ids:
+            # Directly update the mask for specified token IDs
+            mask[torch.tensor(token_ids, dtype=torch.long)] = True
 
         return mask
 
+    @cache
     def _disable_tokens(
         self, token_types: List[str] = [], token_ids: List[int] = None, mask=None
     ):
         """
         Returns a mask, initialized with True, with the specified token types and token IDs disabled.
         """
-        new_mask = torch.full((self.vocab_size,), True, dtype=torch.bool)
+        if mask is None:
+            mask = torch.full((self.vocab_size,), True, dtype=torch.bool)
 
-        for token_type in token_types:
-            if token_type in self.token_masks:
-                new_mask = torch.logical_and(
-                    new_mask, torch.logical_not(self.token_masks[token_type])
-                )
+        if token_types:
+            # Pre-compute a combined negated mask for all specified token types
+            combined_type_mask = torch.ones_like(mask)
+            for t in token_types:
+                if t in self.token_masks:
+                    combined_type_mask &= ~self.token_masks[t]
+            mask &= combined_type_mask
 
         if token_ids is not None:
-            new_mask[token_ids] = False
-
-        if mask is not None:
-            mask = torch.logical_and(mask, new_mask)
-        else:
-            mask = new_mask
+            # Directly update the mask to disable specified token IDs
+            mask[torch.tensor(token_ids, dtype=torch.long)] = False
 
         return mask
 
@@ -179,10 +177,17 @@ class ToolCallSampler(LogitsProcessor):
 
         return key_value_pairs
 
+    @cache
+    def _decode(self, input_ids):
+        return self.tokenizer.decode(input_ids)
+
+    @cache
+    def _encode(self, string):
+        return self.tokenizer.encode(string, add_special_tokens=False)
+
     def _check_for_function_call(self, input_ids):
         input_ids = input_ids[0]
-        inputs_string = self.tokenizer.decode(input_ids[-15:])
-
+        inputs_string = self.tokenizer.decode(input_ids[-self.open_func_token_length :])
         if inputs_string.strip().endswith(self.open_func_token):
             return True
         else:
@@ -192,10 +197,14 @@ class ToolCallSampler(LogitsProcessor):
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
         start_time = time.time()
-        if self._check_for_function_call(input_ids):
-            function_tokens = []
+        if self.input_ids_split_idx is not None:
+            function_tokens = input_ids[0][self.input_ids_split_idx :]
         else:
-            function_tokens = False
+            if self._check_for_function_call(input_ids):
+                function_tokens = []
+                self.input_ids_split_idx = len(input_ids[0])
+            else:
+                function_tokens = False
 
         mask = torch.zeros(self.vocab_size, dtype=torch.bool)
 
@@ -204,9 +213,7 @@ class ToolCallSampler(LogitsProcessor):
 
             # check if a bracket has been made yet
             if tokens_len == 0:
-                next_tokens = self.tokenizer.encode(
-                    '{"name": "', add_special_tokens=False
-                )
+                next_tokens = self._encode('{"name": "')
                 self.next_tokens = next_tokens
                 self.last_open_quote_idx = len(next_tokens)
                 mask = self._allow_tokens(token_types=["space"], mask=mask)
@@ -240,9 +247,7 @@ class ToolCallSampler(LogitsProcessor):
                         self.do_sample = False
                         self.next_tokens = (
                             tokens[len(current_val_seq) + 1 :]
-                            + self.tokenizer.encode(
-                                '", "arguments": ', add_special_tokens=False
-                            )[1:]
+                            + self._encode('", "arguments": ')[1:]
                         )
                         next_token = tokens[len(current_val_seq)]
                         self.nesting_level = 2

@@ -9,7 +9,13 @@ from referencing import Registry, Resource
 from referencing._core import Resolver
 from referencing.jsonschema import DRAFT202012
 
-from .regex_constants import *  # noqa: F403
+from .regex_constants import (
+    STRING,
+    STRING_INNER,
+    WHITESPACE, 
+    format_to_regex,
+    type_to_regex,
+)
 
 
 def build_regex_from_schema(schema: str, whitespace_pattern: Optional[str] = None):
@@ -235,7 +241,7 @@ def to_regex(
                     return reg
                 else:
                     raise NotImplementedError(
-                        f"Format {format} is not supported by Outlines"
+                        f"Format {format} is not supported by Function Sampler"
                     )
             else:
                 return type_to_regex["string"]

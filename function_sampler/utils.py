@@ -1,9 +1,10 @@
 import torch
 from .logger import get_logger
+from .cache import cache
 
 logger = get_logger()
 
-
+@cache
 def build_masks(tokenizer, vocab_size, token_masks, json_tokens):
     bad_tokens = []
     if tokenizer.eos_token_id:
@@ -20,7 +21,7 @@ def build_masks(tokenizer, vocab_size, token_masks, json_tokens):
                 mask[index] = True
         token_masks[key] = mask
 
-
+@cache
 def tokenize_dicts(
     input_dicts,
     tokenizer,
