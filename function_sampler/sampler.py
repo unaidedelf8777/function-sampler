@@ -90,6 +90,8 @@ class ToolCallSampler(LogitsProcessor):
         self.last_open_quote_idx = -1
         self.first_fsm_token = False
         self.input_ids_split_idx = None
+        self.total_time = 0
+
         # Sampling params. these are only used when generating values for params / args.
         # when not generating a value, they are ignored.
         self.temperature = config.temperature if config.temperature else None
@@ -298,5 +300,7 @@ class ToolCallSampler(LogitsProcessor):
                     repetition_penalty=self.repetition_penalty,
                 )
 
+            t = time.time() - start_time
+            self.total_time += t
             logger.debug("#### Time for iteration: " + str(time.time() - start_time))
         return scores
