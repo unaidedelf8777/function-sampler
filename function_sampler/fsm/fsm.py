@@ -30,7 +30,7 @@ class RegexFSM(FSM):
     """FSM to generate text that is in the language of a regular expression."""
 
     def __init__(self, regex_string: str, tokenizer):
-        @cache()
+        @cache
         def create_states_mapping(
             regex_string: str, cacheable_vocabulary: Tuple[Tuple[str, int], ...]
         ) -> Tuple[dict, set]:

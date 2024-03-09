@@ -90,14 +90,17 @@ class ToolCallSampler(LogitsProcessor):
         self.fsm_results = {}
         self.executor = ProcessPoolExecutor()
 
+        self.fsm_tokenizer = FsmTokenizer(tokenizer)
+
         for key, function in self.function_maps.items():
-            future = self.executor.submit(self.compute_fsm, function, **kwargs)
+            future = self.executor.submit(compute_fsm, self.fsm_tokenizer, function)
             future.add_done_callback(functools.partial(self.populate_fsm_result, key=key))
 
         self.next_tokens = []
         self.fsm = None
         self.fsm_state = FSMState(0)
         self.fsm_seq_start_idx = None
+        self.function_key = None
         self.generation_finished = False
         self.do_sample = False
         self.last_open_quote_idx = -1
@@ -271,6 +274,7 @@ class ToolCallSampler(LogitsProcessor):
                     elif len(possible_next_tokens) == 1:
                         t = self._collect_key_tuples(possible_next_tokens)
                         self.identified_function = t[0][1]
+                        self.function_key = t[0][0]
                         tokens = list(t[0][0])
                         # no reason to sample one token.
                         self.do_sample = False
@@ -285,8 +289,8 @@ class ToolCallSampler(LogitsProcessor):
 
                 elif self.identified_function is not None:
                     if self.fsm is None:
-                        fsm_key = self.identified_function[0]
-                        if self.fsm_results[fsm_key] is None:
+                        fsm_key = self.function_key
+                        if fsm_key not in self.fsm_results:
                             self.fsm = self._wait_for_fsm_result(fsm_key)
                             self.first_fsm_token = True
                         else:
@@ -303,11 +307,10 @@ class ToolCallSampler(LogitsProcessor):
                         )
                         allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
 
-                    if self.fsm.is_final_state(self.fsm_state):
+                    if allowed_tokens == [-2]:
                         mask = self._allow_tokens(token_types=["close_bracket"])
                         self.next_tokens = (
-                            [self.json_tokens["close_bracket"][0]]
-                            + self.close_func_token
+                            self.tokenizer.encode(self.close_func_token, add_special_tokens=False)
                             + [self.tokenizer.eos_token_id]
                         )
                     else:
