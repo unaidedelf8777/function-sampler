@@ -1,5 +1,9 @@
 # Function Sampler
 
+<a target="_blank" href="https://colab.research.google.com/github/unaidedelf8777/function-sampler/blob/main/notebooks/Tool_Call_Sampler_demo.ipynb">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
 Function Sampler is a powerful library that provides a novel approach to enforcing structured generation on language models. Unlike other libraries such as Langchain or Llama Index, which rely on prompts and hope that the model follows the prompt for parseable outputs, Function Sampler makes it probabilistically impossible for the language model to output invalid function calls.
 
 By using Logit sampling and a Finite State Machine (FSM), Function Sampler guides the language model to generate function calls that adhere to a predefined schema. This eliminates the need for parsing the outputs and ensures that the generated function calls are always valid.
