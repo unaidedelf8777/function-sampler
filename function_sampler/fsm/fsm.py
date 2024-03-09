@@ -88,7 +88,7 @@ class RegexFSM(FSM):
         next_tokens_to_end_states = self.states_to_token_maps.get(state)
 
         if next_tokens_to_end_states is None:
-            return [self.eos_token_id]
+            return [-2]
         else:
             return list(next_tokens_to_end_states.keys())
 
