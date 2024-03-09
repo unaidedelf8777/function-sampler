@@ -2,6 +2,7 @@ import functools
 import time
 from json import dumps as json_dumps
 from typing import Any, Dict, List, Union
+from concurrent.futures import ProcessPoolExecutor
 
 import torch
 from transformers import LogitsProcessor, PreTrainedTokenizer
@@ -12,8 +13,7 @@ from .config.config import ToolCallSamplerConfig
 from .fsm import FSMState, FsmTokenizer, RegexFSM
 from .json import build_regex_from_schema
 from .logger import get_logger
-from .utils import build_masks, bundle_sampling, tokenize_dicts
-
+from .utils import build_masks, bundle_sampling, tokenize_dicts, compute_fsm
 logger = get_logger()
 
 
@@ -58,6 +58,7 @@ class ToolCallSampler(LogitsProcessor):
 
         self.vocab_size = len(tokenizer)
 
+
         self.json_tokens = (
             self.config.json_tokens.model_dump()
             if self.config.json_tokens
@@ -74,12 +75,24 @@ class ToolCallSampler(LogitsProcessor):
             vocab_size=self.vocab_size,
         )
 
+
+
         # sampling flags and misc
         self.identified_function = None
 
         self.last_open_key_quote_index = -1
 
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
+
+        # we launch computation of all FSM's at the begining,
+        # if one is needed before it is finished, we block until it is done. 
+        # otherwise, it should be ready by the time we need it.
+        self.fsm_results = {}
+        self.executor = ProcessPoolExecutor()
+
+        for key, function in self.function_maps.items():
+            future = self.executor.submit(self.compute_fsm, function, **kwargs)
+            future.add_done_callback(functools.partial(self.populate_fsm_result, key=key))
 
         self.next_tokens = []
         self.fsm = None
@@ -101,6 +114,15 @@ class ToolCallSampler(LogitsProcessor):
             config.repetition_penalty if config.repetition_penalty else None
         )
 
+
+    def populate_fsm_result(self, future, key):
+        # Callback function to populate the results dict upon future completion
+        self.fsm_results[key] = future.result()
+
+    def __del__(self):
+        # Ensure executor resources are freed when the instance is destroyed
+        self.executor.shutdown(wait=False)
+
     def _determine_function(self, start_sequence):
         # Convert the start_sequence list to a tuple for comparison
         start_tuple = tuple(start_sequence)
@@ -118,7 +140,15 @@ class ToolCallSampler(LogitsProcessor):
             # Return None if no matching items are found
             return None
 
-    @cache
+    def _wait_for_fsm_result(self, key, timeout=None):
+        """Wait for the FSM result associated with `key` to be populated."""
+        start_time = time.time()
+        while key not in self.fsm_results:
+            if timeout and (time.time() - start_time) > timeout:
+                raise TimeoutError(f"Waiting for FSM result for '{key}' timed out.")
+            time.sleep(0.1)  # Sleep to prevent busy waiting
+        return self.fsm_results[key]
+
     def _allow_tokens(
         self, token_types: List[str] = [], token_ids: List[int] = [], mask=None
     ):
@@ -142,7 +172,6 @@ class ToolCallSampler(LogitsProcessor):
 
         return mask
 
-    @cache
     def _disable_tokens(
         self, token_types: List[str] = [], token_ids: List[int] = None, mask=None
     ):
@@ -179,11 +208,9 @@ class ToolCallSampler(LogitsProcessor):
 
         return key_value_pairs
 
-    @cache
     def _decode(self, input_ids):
         return self.tokenizer.decode(input_ids)
 
-    @cache
     def _encode(self, string):
         return self.tokenizer.encode(string, add_special_tokens=False)
 
@@ -258,13 +285,13 @@ class ToolCallSampler(LogitsProcessor):
 
                 elif self.identified_function is not None:
                     if self.fsm is None:
-                        regex = build_regex_from_schema(
-                            json_dumps(self.identified_function)
-                        )
-                        self.fsm = RegexFSM(
-                            regex, FsmTokenizer(tokenizer=self.tokenizer)
-                        )
-                        self.first_fsm_token = True
+                        fsm_key = self.identified_function[0]
+                        if self.fsm_results[fsm_key] is None:
+                            self.fsm = self._wait_for_fsm_result(fsm_key)
+                            self.first_fsm_token = True
+                        else:
+                            self.fsm = self.fsm_results[fsm_key]
+                            self.first_fsm_token = True
 
                     if self.first_fsm_token:
                         allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)

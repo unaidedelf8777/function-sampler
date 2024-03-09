@@ -8,6 +8,7 @@ from pydantic import create_model
 from referencing import Registry, Resource
 from referencing._core import Resolver
 from referencing.jsonschema import DRAFT202012
+from .cache import cache
 
 from .regex_constants import (
     STRING,
@@ -17,7 +18,7 @@ from .regex_constants import (
     type_to_regex,
 )
 
-
+@cache
 def build_regex_from_schema(schema: str, whitespace_pattern: Optional[str] = None):
     """Turn a JSON schema into a regex that matches any JSON object that follows
     this schema.
