@@ -8,7 +8,6 @@ from transformers import PreTrainedTokenizer
 logger = get_logger()
 
 
-
 def build_masks(tokenizer, vocab_size, token_masks, json_tokens):
     bad_tokens = []
     if tokenizer.eos_token_id:
@@ -58,10 +57,9 @@ def tokenize_dicts(
 
 
 def compute_fsm(tokenizer: FsmTokenizer, schema):
-
     if isinstance(tokenizer, PreTrainedTokenizer):
         tokenizer = FsmTokenizer(tokenizer)
-    
+
     regex = build_regex_from_schema(json_dumps(schema))
     fsm = RegexFSM(regex, tokenizer)
     return fsm

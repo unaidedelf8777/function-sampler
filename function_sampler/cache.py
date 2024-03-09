@@ -10,6 +10,7 @@ cache_dir = os.environ.get(
 # Create a Memory object for caching to the specified directory
 memory = Memory(cache_dir, verbose=0)
 
+
 def cache(cached_function):
     """Caching decorator for memoizing function calls using joblib."""
     cached_func = memory.cache(cached_function)
@@ -23,15 +24,17 @@ def cache(cached_function):
     return wrapper
 
 
-
-
 _caching_enabled = True
+
 
 def disable_cache():
     """Disable the cache for this session."""
     global _caching_enabled
     _caching_enabled = False
 
+
 def clear_cache():
     """Erase the cache completely."""
-    memory.clear(warn=False)  # warn=False suppresses warnings if the cache directory is already empty
+    memory.clear(
+        warn=False
+    )  # warn=False suppresses warnings if the cache directory is already empty

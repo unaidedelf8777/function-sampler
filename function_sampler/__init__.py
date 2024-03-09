@@ -12,4 +12,5 @@ logging.basicConfig(
 
 logger = logging.getLogger("function-sampler")
 console_handler = logging.StreamHandler()
+
 logger.addHandler(console_handler)

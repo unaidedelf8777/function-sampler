@@ -13,10 +13,11 @@ from .cache import cache
 from .regex_constants import (
     STRING,
     STRING_INNER,
-    WHITESPACE, 
+    WHITESPACE,
     format_to_regex,
     type_to_regex,
 )
+
 
 @cache
 def build_regex_from_schema(schema: str, whitespace_pattern: Optional[str] = None):

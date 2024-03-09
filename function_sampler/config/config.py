@@ -4,8 +4,8 @@ from .token_mapper import TokenMap
 
 
 class ToolCallSamplerConfig(BaseModel):
-    open_func_token: Optional[List[int]] = None
-    close_func_token: Optional[List[int]] = None
+    open_func_token: Optional[str] = None
+    close_func_token: Optional[str] = None
     json_tokens: Optional[TokenMap] = None
     vocab_size: Optional[int]
     end_on_function_call: Optional[bool] = True

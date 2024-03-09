@@ -14,6 +14,7 @@ from .fsm import FSMState, FsmTokenizer, RegexFSM
 from .json import build_regex_from_schema
 from .logger import get_logger
 from .utils import build_masks, bundle_sampling, tokenize_dicts, compute_fsm
+
 logger = get_logger()
 
 
@@ -58,7 +59,6 @@ class ToolCallSampler(LogitsProcessor):
 
         self.vocab_size = len(tokenizer)
 
-
         self.json_tokens = (
             self.config.json_tokens.model_dump()
             if self.config.json_tokens
@@ -75,8 +75,6 @@ class ToolCallSampler(LogitsProcessor):
             vocab_size=self.vocab_size,
         )
 
-
-
         # sampling flags and misc
         self.identified_function = None
 
@@ -85,7 +83,7 @@ class ToolCallSampler(LogitsProcessor):
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
 
         # we launch computation of all FSM's at the begining,
-        # if one is needed before it is finished, we block until it is done. 
+        # if one is needed before it is finished, we block until it is done.
         # otherwise, it should be ready by the time we need it.
         self.fsm_results = {}
         self.executor = ProcessPoolExecutor()
@@ -94,7 +92,9 @@ class ToolCallSampler(LogitsProcessor):
 
         for key, function in self.function_maps.items():
             future = self.executor.submit(compute_fsm, self.fsm_tokenizer, function)
-            future.add_done_callback(functools.partial(self.populate_fsm_result, key=key))
+            future.add_done_callback(
+                functools.partial(self.populate_fsm_result, key=key)
+            )
 
         self.next_tokens = []
         self.fsm = None
@@ -116,7 +116,6 @@ class ToolCallSampler(LogitsProcessor):
         self.repetition_penalty = (
             config.repetition_penalty if config.repetition_penalty else None
         )
-
 
     def populate_fsm_result(self, future, key):
         # Callback function to populate the results dict upon future completion
@@ -309,10 +308,9 @@ class ToolCallSampler(LogitsProcessor):
 
                     if allowed_tokens == [-2]:
                         mask = self._allow_tokens(token_types=["close_bracket"])
-                        self.next_tokens = (
-                            self.tokenizer.encode(self.close_func_token, add_special_tokens=False)
-                            + [self.tokenizer.eos_token_id]
-                        )
+                        self.next_tokens = self.tokenizer.encode(
+                            self.close_func_token, add_special_tokens=False
+                        ) + [self.tokenizer.eos_token_id]
                     else:
                         mask = self._allow_tokens(token_ids=allowed_tokens)
                         self.do_sample = True
