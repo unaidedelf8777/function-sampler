@@ -129,7 +129,7 @@ env.bak/
 venv.bak/
 
 #Ruff formatter 
-.ruff_cache
+/.ruff_cache
 
 # Spyder project settings
 .spyderproject
