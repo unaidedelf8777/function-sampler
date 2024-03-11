@@ -3,7 +3,7 @@ name = "function-sampler"
 packages = [
     {include = "function_sampler"},
 ]
-version = "0.1.2"
+version = "0.1.3"
 description = "Function calling Logit Sampler"
 authors = ["Nathan Hoos <thwackyy.y@gmail.com>"]
 license = "Apache 2.0"

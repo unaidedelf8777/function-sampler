@@ -19,6 +19,24 @@ logger = get_logger()
 
 
 class ToolCallSampler(LogitsProcessor):
+    """
+    A logits processor designed to facilitate the generation and sampling of function calls and their arguments.
+
+    Attributes:
+        tokenizer (PreTrainedTokenizer): A tokenizer compatible with Hugging Face's Transformers library,
+            used for encoding and decoding text.
+        functions (List[Dict], optional): A list of dictionaries representing the available functions
+            and their metadata. Defaults to None.
+        config (Union[ToolCallSamplerConfig, Dict[str, Any]], optional): Configuration for the sampler,
+            either as a ToolCallSamplerConfig object or as a dictionary that can be parsed into one.
+            Defaults to None.
+
+    The class is initialized with a tokenizer for handling text encoding/decoding, a list of function
+    definitions for determining valid function calls and arguments, and a configuration object for
+    fine-tuning the sampling behavior. It extends the `LogitsProcessor` class from Hugging Face's
+    Transformers, enabling it to be integrated into the text generation pipeline to control the
+    likelihood of generating specific tokens based on the current context and predefined constraints.
+    """
     def __init__(
         self,
         tokenizer: PreTrainedTokenizer,
@@ -308,9 +326,14 @@ class ToolCallSampler(LogitsProcessor):
 
                     if allowed_tokens == [-2]:
                         mask = self._allow_tokens(token_types=["close_bracket"])
-                        self.next_tokens = self.tokenizer.encode(
-                            self.close_func_token, add_special_tokens=False
-                        ) + [self.tokenizer.eos_token_id]
+                        self.next_tokens = (
+                            self.tokenizer.encode(
+                                self.close_func_token, add_special_tokens=False
+                            )
+                            + [self.tokenizer.eos_token_id]
+                            if self.generate_close_func_token
+                            else [self.tokenizer.eos_token_id]
+                        )
                     else:
                         mask = self._allow_tokens(token_ids=allowed_tokens)
                         self.do_sample = True
