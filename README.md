@@ -82,6 +82,7 @@ input_ids = tokenizer.encode(input_text, return_tensors="pt")
 output = model.generate(input_ids, max_length=200, logits_processor=[sampler])
 generated_text = tokenizer.decode(output[0])
 print(generated_text)
+# <function>  {"name": "get_reservation", "arguments": {"restaurant_name": "Maggiano's", "reservation_time": 18:00:00, "party_size": 6, "contact_number": 1234567890}} </function><|im_end|>
 ```
 
 In this example, we create an instance of the `ToolCallSampler` with the specified functions and configuration. We then attach the sampler to the model's `logits_processor` attribute. This ensures that the sampler is applied during the generation process.
