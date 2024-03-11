@@ -65,7 +65,7 @@ class ToolCallSampler(LogitsProcessor):
             if self.config.open_func_token
             else "</function>"
         )
-
+        self.generate_close_func_token = config.generate_close_func_token if config.generate_close_func_token else True
         self.open_func_token_length = len(
             self.tokenizer.encode(self.open_func_token, add_special_tokens=False)
         )
