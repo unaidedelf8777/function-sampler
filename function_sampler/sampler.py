@@ -3,7 +3,7 @@ import time
 from json import dumps as json_dumps
 from typing import Any, Dict, List, Union
 from concurrent.futures import ProcessPoolExecutor
-
+import re
 import torch
 from transformers import LogitsProcessor, PreTrainedTokenizer
 
@@ -37,6 +37,7 @@ class ToolCallSampler(LogitsProcessor):
     Transformers, enabling it to be integrated into the text generation pipeline to control the
     likelihood of generating specific tokens based on the current context and predefined constraints.
     """
+
     def __init__(
         self,
         tokenizer: PreTrainedTokenizer,
@@ -65,7 +66,11 @@ class ToolCallSampler(LogitsProcessor):
             if self.config.open_func_token
             else "</function>"
         )
-        self.generate_close_func_token = config.generate_close_func_token if config.generate_close_func_token else True
+        self.generate_close_func_token = (
+            config.generate_close_func_token
+            if config.generate_close_func_token
+            else True
+        )
         self.open_func_token_length = len(
             self.tokenizer.encode(self.open_func_token, add_special_tokens=False)
         )
@@ -82,6 +87,16 @@ class ToolCallSampler(LogitsProcessor):
             if self.config.json_tokens
             else TokenMap.build(tokenizer=tokenizer).model_dump()
         )
+
+        self.regex = None
+
+        # If parallel_calls is enabled, the sampler will allow the model to generate multiple calls in parallel
+        self.parallel_calls = (
+            self.config.parallel_calls if self.config.parallel_calls else False
+        )
+        self.possibly_generate_more_calls = False
+        self.evaluate_more_calls = False
+        self.completed_functions = []
 
         #
         # convert json_tokens dict into a dict with values of long tensors, instead of allowed token ids
@@ -106,7 +121,7 @@ class ToolCallSampler(LogitsProcessor):
         self.fsm_results = {}
         self.executor = ProcessPoolExecutor()
 
-        self.fsm_tokenizer = FsmTokenizer(tokenizer)
+        self.fsm_tokenizer = FsmTokenizer(tokenizer, trim=self.config.trim_tokenizer)
 
         for key, function in self.function_maps.items():
             future = self.executor.submit(compute_fsm, self.fsm_tokenizer, function)
@@ -151,7 +166,8 @@ class ToolCallSampler(LogitsProcessor):
         matching_items = {
             key: value
             for key, value in self.function_maps.items()
-            if key[: len(start_tuple)] == start_tuple
+            if key[:len(start_tuple)] == start_tuple
+            and key not in self.completed_functions
         }
         logger.debug(matching_items)
         if matching_items:
@@ -265,7 +281,11 @@ class ToolCallSampler(LogitsProcessor):
                 next_tokens = self._encode('{"name": "')
                 self.next_tokens = next_tokens
                 self.last_open_quote_idx = len(next_tokens)
-                mask = self._allow_tokens(token_types=["space"], mask=mask)
+
+                if self.parallel_calls:
+                    mask = self._allow_tokens(token_types=["list_open"], mask=mask)
+                else:
+                    mask = self._allow_tokens(token_types=["space"], mask=mask)
 
             elif len(self.next_tokens) >= 1:
                 tok_id = self.next_tokens.pop(0)
@@ -305,38 +325,73 @@ class ToolCallSampler(LogitsProcessor):
                         mask = self._allow_tokens(token_ids=[next_token], mask=mask)
 
                 elif self.identified_function is not None:
-                    if self.fsm is None:
-                        fsm_key = self.function_key
-                        if fsm_key not in self.fsm_results:
-                            self.fsm = self._wait_for_fsm_result(fsm_key)
-                            self.first_fsm_token = True
+
+                    if self.possibly_generate_more_calls:
+                        if self.evaluate_more_calls:
+                            if function_tokens[-1] in self.token_maps['list_close']:
+                              if self.generate_close_func_token:
+                                  next_tokens = self._encode(self.close_func_token)
+                                  self.next_tokens = next_tokens[1:]
+                                  mask = self._allow_tokens(token_ids=[next_tokens[0]], mask=mask)
+                              else:
+                                  mask = self._allow_tokens(token_ids=self.tokenizer.eos_token_id, mask=mask)
+                            else:
+                                self.function_maps.pop(self.function_key)
+                                self.identified_function = None
+                                self.fsm = None
+                                self.fsm_state = FSMState(0)
+                                self.fsm_seq_start_idx = None
+                                self.function_key = None
+                                self.possibly_generate_more_calls = False
+                                self.evaluate_more_calls = False
+                                self.input_ids_split_idx = len(input_ids[0]) + 2
+                                mask = self._allow_tokens(token_types=['space'])
+                                
+                        mask = self._allow_tokens(token_types=["list_close", "comma"], mask=mask)
+                        self.evaluate_more_calls = True
+                        
+                        
+                    else:
+                        if self.fsm is None:
+                            fsm_key = self.function_key
+                            if fsm_key not in self.fsm_results:
+                                self.fsm = self._wait_for_fsm_result(fsm_key)
+                                self.first_fsm_token = True
+                            else:
+                                self.fsm = self.fsm_results[fsm_key]
+                                self.first_fsm_token = True
+
+                        if self.first_fsm_token:
+                            allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
+                            self.first_fsm_token = False
                         else:
-                            self.fsm = self.fsm_results[fsm_key]
-                            self.first_fsm_token = True
-
-                    if self.first_fsm_token:
-                        allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
-                        self.first_fsm_token = False
-                    else:
-                        last_token = input_ids[0][-1]
-                        self.fsm_state = self.fsm.next_state(
-                            self.fsm_state, int(last_token)
-                        )
-                        allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
-
-                    if allowed_tokens == [-2]:
-                        mask = self._allow_tokens(token_types=["close_bracket"])
-                        self.next_tokens = (
-                            self.tokenizer.encode(
-                                self.close_func_token, add_special_tokens=False
+                            last_token = input_ids[0][-1]
+                            self.fsm_state = self.fsm.next_state(
+                                self.fsm_state, int(last_token)
                             )
-                            + [self.tokenizer.eos_token_id]
-                            if self.generate_close_func_token
-                            else [self.tokenizer.eos_token_id]
-                        )
-                    else:
-                        mask = self._allow_tokens(token_ids=allowed_tokens)
-                        self.do_sample = True
+                            allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
+
+                        if allowed_tokens == [-2]:
+                            self.function_maps.pop(self.function_key)
+                            mask = self._allow_tokens(token_types=["close_bracket"])
+                            gen_more = False
+                            if self.parallel_calls:
+                                if len(self.function_maps.items()) > 0:
+                                    gen_more = True
+                                    self.possibly_generate_more_calls = True
+                                    self.completed_functions.append(self.function_key)
+                            if not gen_more:
+                                self.next_tokens = (
+                                    self._encode(']') if self.parallel_calls
+                                    else []
+                                    + self._encode(self.close_func_token)
+                                    + [self.tokenizer.eos_token_id]
+                                    if self.generate_close_func_token
+                                    else [self.tokenizer.eos_token_id]
+                                )
+                        else:
+                            mask = self._allow_tokens(token_ids=allowed_tokens)
+                            self.do_sample = True
 
             mask = mask.expand_as(scores)
             scores[~mask] = -float("Inf")
