@@ -2,15 +2,13 @@ from joblib import Memory
 import os
 
 # Determine the cache directory, defaulting to ~/.cache/function_sampler
-def get_cache_dir():
-    home_dir = os.path.expanduser("~")
-    cache_dir = os.environ.get(
-        "FUNCTION_SAMPLER_CACHE_DIR", f"{home_dir}/.cache/function_sampler"
-    )
-    return cache_dir
+home_dir = os.path.expanduser("~")
+cache_dir = os.environ.get(
+    "FUNCTION_SAMPLER_CACHE_DIR", f"{home_dir}/.cache/function_sampler"
+)
 
 # Create a Memory object for caching to the specified directory
-memory = Memory(get_cache_dir(), verbose=0)
+memory = Memory(cache_dir, verbose=0)
 
 
 def cache(cached_function):
@@ -40,5 +38,3 @@ def clear_cache():
     memory.clear(
         warn=False
     )  # warn=False suppresses warnings if the cache directory is already empty
-
-    

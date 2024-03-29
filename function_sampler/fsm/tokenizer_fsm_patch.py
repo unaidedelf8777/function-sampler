@@ -1,7 +1,6 @@
 import torch
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Dict, Hashable, List, Protocol, Set, Tuple, Union
-from .utils import trim_tokenizer_ascii
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,9 +44,7 @@ class Tokenizer(Protocol, Hashable):
 class TransformerTokenizer(Tokenizer):
     """Represents a tokenizer for models in the `transformers` library."""
 
-    def __init__(self, tokenizer: "PreTrainedTokenizer", trim=False, **kwargs):
-        if trim:
-            tokenizer = trim_tokenizer_ascii(tokenizer)
+    def __init__(self, tokenizer: "PreTrainedTokenizer", **kwargs):
         self.tokenizer = tokenizer
         self.eos_token_id = self.tokenizer.eos_token_id
         self.eos_token = self.tokenizer.eos_token
