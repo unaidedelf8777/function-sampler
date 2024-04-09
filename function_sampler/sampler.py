@@ -1,17 +1,14 @@
 import functools
 import time
-from json import dumps as json_dumps
 from typing import Any, Dict, List, Union
 from concurrent.futures import ProcessPoolExecutor
 
 import torch
 from transformers import LogitsProcessor, PreTrainedTokenizer
 
-from .cache import cache
 from .config import TokenMap
 from .config.config import ToolCallSamplerConfig
-from .fsm import FSMState, FsmTokenizer, RegexFSM
-from .json import build_regex_from_schema
+from .fsm import FSMState, FsmTokenizer
 from .logger import get_logger
 from .utils import build_masks, bundle_sampling, tokenize_dicts, compute_fsm
 
@@ -37,6 +34,7 @@ class ToolCallSampler(LogitsProcessor):
     Transformers, enabling it to be integrated into the text generation pipeline to control the
     likelihood of generating specific tokens based on the current context and predefined constraints.
     """
+
     def __init__(
         self,
         tokenizer: PreTrainedTokenizer,
@@ -65,7 +63,11 @@ class ToolCallSampler(LogitsProcessor):
             if self.config.open_func_token
             else "</function>"
         )
-        self.generate_close_func_token = config.generate_close_func_token if config.generate_close_func_token else True
+        self.generate_close_func_token = (
+            config.generate_close_func_token
+            if config.generate_close_func_token
+            else True
+        )
         self.open_func_token_length = len(
             self.tokenizer.encode(self.open_func_token, add_special_tokens=False)
         )

@@ -1,0 +1,18 @@
+[package]
+name = "fsm_utils"  ## this will be the submodule name
+version = "0.1.0"
+edition = "2021"
+
+
+[lib]
+crate-type = ["cdylib"]
+path = "function_sampler/fsm/fsm_utils/src/lib.rs"
+
+# Dependencies for this specific package
+[dependencies]
+pyo3 = { version = "0.21.1", features = ["extension-module"] }
+rayon = "1.10.0"
+
+
+[profile.release]
+opt-level = 3

@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "function-sampler"
 packages = [
-    {include = "function_sampler"},
+    { include = "function_sampler" },
 ]
 version = "0.1.3"
 description = "Function calling Logit Sampler"
@@ -9,6 +9,11 @@ authors = ["Nathan Hoos <thwackyy.y@gmail.com>"]
 license = "Apache 2.0"
 readme = "README.md"
 
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -21,13 +26,24 @@ datasets = "^2.18.0"
 referencing = "^0.33.0"
 interegular = "^0.3.3"
 jsonref = "^1.1.0"
-
+torch = "^2.2.2"
+joblib = "^1.3.2"
+jsonschema = "^4.21.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.3.1"
+maturin = "^1.5.1"
+pre-commit = "^3.7.0"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.maturin]
+module-name = "function_sampler.fsm.fsm_utils"
+version = "0.1.3"
+rust-version = "1.77.1" 
 
+[lib]
+name = "fsm_utils" 
+crate-type = ["cdylib"]  

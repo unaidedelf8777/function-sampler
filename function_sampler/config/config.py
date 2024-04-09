@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import Optional
 from .token_mapper import TokenMap
 
 

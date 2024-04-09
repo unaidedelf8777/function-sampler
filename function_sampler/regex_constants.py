@@ -1,7 +1,7 @@
 STRING_INNER = r'(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)'
 STRING = f'"{STRING_INNER}*"'
-INTEGER = r"(0|[1-9][0-9]*)"
-NUMBER = rf"(-)?({INTEGER})(\.[0-9]+)?([eE][+-][0-9]+)?"
+INTEGER = r"(-)?(0|[1-9][0-9]*)"
+NUMBER = rf"({INTEGER})(\.[0-9]+)?([eE][+-][0-9]+)?"
 BOOLEAN = r"(true|false)"
 NULL = r"null"
 WHITESPACE = r"[\n ]*"
