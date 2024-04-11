@@ -2,8 +2,8 @@ from typing import TYPE_CHECKING, List, NewType, Protocol, Tuple
 
 import interegular
 
-from ..cache import cache
 from .regex import create_fsm_index_tokenizer, make_deterministic_fsm
+import time
 
 if TYPE_CHECKING:
     from .tokenizer_fsm_patch import Tokenizer
@@ -30,13 +30,13 @@ class RegexFSM(FSM):
     """FSM to generate text that is in the language of a regular expression."""
 
     def __init__(self, regex_string: str, tokenizer):
-        @cache
         def create_states_mapping(
             regex_string: str, cacheable_vocabulary: Tuple[Tuple[str, int], ...]
         ) -> Tuple[dict, set]:
             """Create the variables related to the mapping between states and tokens
             The parameters of the function are used for caching purpose
             """
+            start_time = time.perf_counter()
             regex_pattern = interegular.parse_pattern(regex_string)
             regex_fsm, _ = make_deterministic_fsm(regex_pattern.to_fsm().reduce())
             states_to_token_maps, empty_token_ids = create_fsm_index_tokenizer(
@@ -53,7 +53,8 @@ class RegexFSM(FSM):
                 raise ValueError(
                     "The vocabulary does not allow us to build a sequence that matches the input regex"
                 )
-
+            end_time = time.perf_counter()
+            print(f"Time taken for Rust: {end_time - start_time} seconds")
             return states_to_token_maps, empty_token_ids
 
         self.states_to_token_maps, self.empty_token_ids = create_states_mapping(

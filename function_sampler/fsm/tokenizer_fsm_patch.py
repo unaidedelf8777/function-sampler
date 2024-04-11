@@ -41,6 +41,9 @@ class Tokenizer(Protocol, Hashable):
         ...
 
 
+SPIECE_UNDERLINE = "\u2581"
+
+
 class TransformerTokenizer(Tokenizer):
     """Represents a tokenizer for models in the `transformers` library."""
 
@@ -73,8 +76,6 @@ class TransformerTokenizer(Tokenizer):
         return text
 
     def convert_token_to_string(self, token: str) -> str:
-        from transformers.file_utils import SPIECE_UNDERLINE
-
         string = self.tokenizer.convert_tokens_to_string([token])
 
         # A hack to handle missing spaces to HF's Llama tokenizers

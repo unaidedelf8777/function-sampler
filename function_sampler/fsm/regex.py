@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Dict, List, Set, Tuple
 
 import numpy as np
 from interegular.fsm import FSM, Alphabet, anything_else
-
 from .fsm_utils import create_fsm_index_end_to_end
 from .utils import reduced_vocabulary
 
@@ -213,6 +212,7 @@ def create_fsm_index_tokenizer(
 
     """
     vocabulary, empty_token_ids = reduced_vocabulary(tokenizer)
+
     fsm_info = fsm.fsm_info
     # rust impl expects generic types, so just cast them.
     states_to_token_subsets = create_fsm_index_end_to_end(fsm_info, dict(vocabulary))  # type: ignore
