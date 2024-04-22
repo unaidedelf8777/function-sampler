@@ -185,7 +185,7 @@ pub fn create_fsm_index_end_to_end_py(
 
 /// Create an FSM state-to-vocabulary map/index through end-to-end token parsing.
 /// ( Rust version for tests and other stuff )
-/// 
+///  
 /// Args:
 ///     pattern (String): A string pattern to build the DFA.
 ///     vocabulary (TokenVocabulary): A data structure representing the vocabulary tokens.
