@@ -3,9 +3,10 @@ use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
 mod tokenizer_index;
+mod types;
 
 #[pymodule]
-#[pyo3(name="fsm_utils")]
+#[pyo3(name = "fsm_utils")]
 fn fsm_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(create_fsm_index_end_to_end_py, m)?)?;
     Ok(())

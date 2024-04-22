@@ -1,31 +1,21 @@
+// third party imports
 use pyo3::prelude::*;
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, FromPyObject)]
-pub struct FSMInfo {
-    #[pyo3(item("initial"))]
-    initial: i64,
-    #[pyo3(item("finals"))]
-    finals: HashSet<i64>,
-    #[pyo3(item("transitions"))]
-    transitions: HashMap<(i64, i64), i64>,
-    #[pyo3(item("trans_key_to_states"))]
-    trans_key_to_states: HashMap<i64, Vec<i64>>,
-    #[pyo3(item("alphabet_anything_value"))]
-    alphabet_anything_value: i64,
-    #[pyo3(item("alphabet_symbol_mapping"))]
-    alphabet_symbol_mapping: HashMap<String, i64>,
-}
 
-pub type TokenVocabulary = HashMap<String, Vec<i64>>;
+// local module imports
+use crate::types::{build_dfa, FSMInfo};
+
+pub type TokenVocabulary = BTreeMap<String, Vec<u32>>;
 
 fn walk_fsm(
     fsm_info: &FSMInfo,
     input_string: &str,
-    start_state: i64,
+    start_state: u32,
     full_match: bool,
-) -> Vec<i64> {
+) -> Vec<u32> {
+    
     let mut state = start_state;
     let mut accepted_states = Vec::new();
     let mut last_final_idx: Option<usize> = None;
@@ -77,11 +67,12 @@ fn walk_fsm(
     accepted_states
 }
 
+#[inline(always)]
 fn state_scan_tokens(
     fsm_info: &FSMInfo,
     vocabulary: &TokenVocabulary,
-    start_state: i64,
-) -> HashSet<(i64, i64)> {
+    start_state: u32,
+) -> BTreeSet<(u32, u32)> {
     vocabulary
         .par_iter()
         .flat_map(|(token, token_ids)| {
@@ -102,16 +93,16 @@ fn state_scan_tokens(
         // Flatten the nested structure into a single collection of pairs.
         .flatten()
         // Collect the results into a HashSet to ensure uniqueness.
-        .collect::<HashSet<(i64, i64)>>()
+        .collect::<BTreeSet<(u32, u32)>>()
 }
 
 fn create_fsm_index_end_to_end(
     fsm_info: &FSMInfo,
     vocabulary: &TokenVocabulary,
-) -> HashMap<i64, HashMap<i64, i64>> {
-    let mut states_to_token_subsets = HashMap::new();
-    let mut seen = HashSet::new();
-    let mut next_states = HashSet::new();
+) -> BTreeMap<u32, BTreeMap<u32, u32>> {
+    let mut states_to_token_subsets = BTreeMap::<u32, BTreeMap<u32, u32>>::new();
+    let mut seen = BTreeSet::<u32>::new();
+    let mut next_states = BTreeSet::<u32>::new();
     next_states.insert(fsm_info.initial);
 
     while let Some(start_state) = next_states.iter().next().copied() {
@@ -121,37 +112,106 @@ fn create_fsm_index_end_to_end(
         for &(token_id, end_state) in &token_ids_end_states {
             states_to_token_subsets
                 .entry(start_state)
-                .or_insert_with(HashMap::new)
+                .or_insert_with(BTreeMap::new)
                 .insert(token_id, end_state);
-            if !seen.contains(&end_state) {
+            if seen.insert(end_state) {
                 next_states.insert(end_state);
             }
         }
 
-        
         seen.insert(start_state);
     }
 
     states_to_token_subsets
 }
 
+
+fn trim_vocabulary(
+    fsm_info: &FSMInfo,
+    vocabulary: &TokenVocabulary,
+) -> TokenVocabulary {
+    vocabulary
+        .par_iter()
+        .filter(|(token, _)| {
+            // Check each character or substring in the token
+            token.chars().all(|ch| {
+                // For simplicity, assuming single character mapping here
+                let ch_str = ch.to_string();
+                fsm_info.alphabet_symbol_mapping.contains_key(&ch_str)
+            })
+        })
+        .map(|(token, ids)| (token.clone(), ids.clone()))
+        .collect()
+}
+
 /// Create an FSM state-to-vocabulary map/index through end-to-end token parsing.
 ///
 /// Args:
-///     fsm_info (dict): A dictionary containing FSM information.
-///     vocabulary (dict): A dictionary representing the vocabulary tokens.
+///     pattern (String): A string pattern to build the DFA.
+///     vocabulary (TokenVocabulary): A data structure representing the vocabulary tokens.
 ///
 /// Returns:
-///     dict: A mapping of FSM states to vocabulary token sets.
+///     (BTreeMap<u32, BTreeMap<u32, u32>>, u32, Vec<u32>): A mapping of FSM states to vocabulary token sets,
+///     the initial state, and a vector of final states.
 #[pyfunction(name = "create_fsm_index_end_to_end")]
 #[pyo3(text_signature = "(fsm_info, vocabulary, /)")]
 pub fn create_fsm_index_end_to_end_py(
     py: Python<'_>,
-    fsm_info: FSMInfo,
+    pattern: String,
     vocabulary: TokenVocabulary,
-) -> HashMap<i64, HashMap<i64, i64>> {
-    let states_to_token_subsets =
-        py.allow_threads(move || create_fsm_index_end_to_end(&fsm_info, &vocabulary));
+) -> (BTreeMap<u32, BTreeMap<u32, u32>>, u32, Vec<u32>) {
+    let start_time = std::time::Instant::now();
+    let results = py.allow_threads(move || {
+        let dfa = build_dfa(&pattern, false);
+        let fsm_info = FSMInfo::from_dfa(&dfa.as_ref());
+        println!("initial vocab len: {:?}", vocabulary.len());
+        let vocabulary = trim_vocabulary(&fsm_info, &vocabulary);
+        println!("final vocab len: {:?}", vocabulary.len());
+        let states_token_subsets = create_fsm_index_end_to_end(&fsm_info, &vocabulary);
+        println!("Time taken to build FSM index: {:?}", start_time.elapsed());
+        println!(
+            "length states to token subsets: {:?}",
+            states_token_subsets.len()
+        );
+        (fsm_info, states_token_subsets)
+    });
 
-    states_to_token_subsets
+    (
+        results.1,
+        results.0.initial,
+        results.0.finals.iter().copied().collect(),
+    )
+}
+
+/// Create an FSM state-to-vocabulary map/index through end-to-end token parsing.
+/// ( Rust version for tests and other stuff )
+/// 
+/// Args:
+///     pattern (String): A string pattern to build the DFA.
+///     vocabulary (TokenVocabulary): A data structure representing the vocabulary tokens.
+///
+/// Returns:
+///     (BTreeMap<u32, BTreeMap<u32, u32>>, u32, Vec<u32>): A mapping of FSM states to vocabulary token sets,
+///     the initial state, and a vector of final states.
+pub fn create_fsm_index_tokenizer(
+    pattern: String,
+    vocabulary: TokenVocabulary,
+) -> (BTreeMap<u32, BTreeMap<u32, u32>>, u32, Vec<u32>) {
+    let start_time = std::time::Instant::now();
+
+    // Building the DFA from the pattern without Python interference
+    let dfa = build_dfa(&pattern, false);
+    let fsm_info = FSMInfo::from_dfa(&dfa.as_ref());
+
+    // Trimming the vocabulary based on the FSM info
+    let trimmed_vocabulary = trim_vocabulary(&fsm_info, &vocabulary);
+
+    // Creating the FSM index end-to-end
+    let states_token_subsets = create_fsm_index_end_to_end(&fsm_info, &trimmed_vocabulary);
+
+    (
+        states_token_subsets,
+        fsm_info.initial,
+        fsm_info.finals.iter().copied().collect(),
+    )
 }

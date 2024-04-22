@@ -199,7 +199,7 @@ def make_deterministic_fsm(fsm: FSM) -> Tuple[BetterFSM, Dict[int, int]]:
 
 
 def create_fsm_index_tokenizer(
-    fsm: BetterFSM,
+    pattern: str,
     tokenizer: "Tokenizer",
 ) -> Tuple[Dict[int, Dict[int, int]], Set[int]]:
     """Construct an FMS index from a tokenizer.
@@ -213,7 +213,6 @@ def create_fsm_index_tokenizer(
     """
     vocabulary, empty_token_ids = reduced_vocabulary(tokenizer)
 
-    fsm_info = fsm.fsm_info
     # rust impl expects generic types, so just cast them.
-    states_to_token_subsets = create_fsm_index_end_to_end(fsm_info, dict(vocabulary))  # type: ignore
-    return states_to_token_subsets, empty_token_ids
+    states_to_token_subsets, initial, finals = create_fsm_index_end_to_end(pattern, dict(vocabulary))  # type: ignore
+    return states_to_token_subsets, empty_token_ids, initial, finals
