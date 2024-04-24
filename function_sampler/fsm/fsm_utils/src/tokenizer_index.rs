@@ -197,35 +197,6 @@ pub fn create_fsm_index_end_to_end_parallel(
     });
 }
 
-/// ### `trim_vocabulary` Function
-///
-/// Filters out tokens from the given vocabulary that contain characters not present in the FSM's alphabet.
-///
-/// **Arguments:**
-/// - `fsm_info`: Reference to `FSMInfo` which includes the allowed alphabet for the FSM.
-/// - `vocabulary`: Reference to `TokenVocabulary` which includes the full set of tokens to be filtered.
-///
-/// **Returns:**
-/// - `TokenVocabulary`: A new vocabulary containing only those tokens where every character (or substring) is present in the FSM's alphabet.
-///
-/// **Description:**
-/// This function uses parallel processing to quickly filter out tokens that include any character or substring not found in the FSM's alphabet, 
-/// as defined in `fsm_info`. It checks each token and retains those where all characters are valid per the FSM's alphabet mappings,
-/// thus ensuring the trimmed vocabulary only contains tokens that can be processed by the FSM.
-fn trim_vocabulary(fsm_info: &FSMInfo, vocabulary: &TokenVocabulary) -> TokenVocabulary {
-    vocabulary
-        .par_iter()
-        .filter(|(token, _)| {
-            // Check each character or substring in the token
-            token.chars().all(|ch| {
-                // For simplicity, assuming single character mapping here
-                let ch_str = ch.to_string();
-                fsm_info.alphabet_symbol_mapping.contains_key(&ch_str)
-            })
-        })
-        .map(|(token, ids)| (token.clone(), ids.clone()))
-        .collect()
-}
 
 /// Create an FSM state-to-vocabulary map/index through end-to-end token parsing.
 ///
@@ -247,8 +218,7 @@ pub fn create_fsm_index_end_to_end_py(
     let results = py.allow_threads(move || {
         let dfa = build_dfa(&pattern, false);
         let fsm_info = FSMInfo::from_dfa(&dfa.as_ref());
-        let trimmed_vocabulary = trim_vocabulary(&fsm_info, &vocabulary);
-        return LazyFSMIndex::new(fsm_info, trimmed_vocabulary, eos_token_id);
+        return LazyFSMIndex::new(fsm_info, vocabulary, eos_token_id);
     });
     return results;
 }

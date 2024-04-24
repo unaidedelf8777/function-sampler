@@ -136,6 +136,8 @@ impl LazyFSMIndex {
         let token_map = self.get_state_map(state as u32);
         token_map
             .and_then(|map| map.get(&token_id).copied().map(|s| s as i32))
+            // if the token to next state pair is not found, return -1, this isnt something we can blindly repair.
+            // may as well just give up!
             .or(Some(-1))
     }
 
@@ -144,7 +146,11 @@ impl LazyFSMIndex {
         // return state == self.final_state
 
         // Check if the state is the "final" or invalid state
-        state == -1
+        if state == -1 || self.fsm_info.finals.contains(&(state as u32)) {
+            return true;
+        } else {
+            return false;
+        }
     }
 
     pub fn is_computing_finished(&self) -> bool {
