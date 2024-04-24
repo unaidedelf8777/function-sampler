@@ -71,7 +71,7 @@ def test_benchmark_compile_fsm():
     """Benchmark the numba compilation time without mocker."""
 
     # Reload the module to apply the patched njit
-    from function_sampler.fsm import RegexFSM
+    from function_sampler.fsm.regex import create_fsm_index_tokenizer
 
     pattern1 = build_regex_from_schema(json_dumps(s[0]["parameters"]))
     pattern2 = build_regex_from_schema(json_dumps(s[1]["parameters"]))
@@ -81,33 +81,39 @@ def test_benchmark_compile_fsm():
 
     # Benchmark phase
 
-    for i in range(2):
-        if i == 0:
+    for i in range(4):
+        if i % 1 == 0:
+            print("starting timer")
             start_time_rs = time.perf_counter()
-            fsm = RegexFSM(pattern1, tokenizer)
+            fsm, empty_token_ids = create_fsm_index_tokenizer(pattern1, tokenizer)
             end_time_rs = time.perf_counter()
             print(fsm)
             print(f"Time taken for Rust: {end_time_rs - start_time_rs} seconds")
             clear_cache()
             disable_cache()
             print("====================================")
+            print(f"first state: {fsm.first_state()}")
             print(
-                f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(fsm.first_state)]}"
+                f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(fsm.first_state())]}"
             )
             print("====================================")
-        elif i == 1:
+            time.sleep(3)
+        elif i % 2 == 0:
+            print("starting timer")
             start_time_rs = time.perf_counter()
-            fsm = RegexFSM(pattern2, tokenizer)
+            fsm, empty_token_ids = create_fsm_index_tokenizer(pattern2, tokenizer)
             end_time_rs = time.perf_counter()
             print(fsm)
             print(f"Time taken for Rust: {end_time_rs - start_time_rs} seconds")
             clear_cache()
             disable_cache()
             print("====================================")
+            print(f"first state: {fsm.first_state()}")
             print(
-                f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(fsm.first_state)]}"
+                f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(fsm.first_state())]}"
             )
             print("====================================")
+            time.sleep(3)
 
 
 # Run the benchmark test

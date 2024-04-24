@@ -8,8 +8,10 @@ use regex_automata::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+pub type TokenVocabulary = BTreeMap<String, Vec<u32>>;
+
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct FSMInfo {
+pub struct FSMInfo {
     /// Initial state of the FSM
     pub initial: u32,
     /// Final states of the FSM
@@ -46,6 +48,8 @@ fn find_predecessors<'a, T: AsRef<[u32]>>(
         .collect()
 }
 
+/// filters out terminal control characters, and control char such as escape, backspace, etc.
+/// model cant use them so we shouldnt waste time computing for them.
 fn is_displayable_char(c: &char) -> bool {
     if c.is_control() {
         // Allow specific control characters: Carriage Return, Tab, Line Feed

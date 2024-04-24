@@ -1,7 +1,13 @@
+"""
+Tool Call sampler.
+
+Yes I know how messy this code is. I'll clean it up when I get the chance.
+"""
+
 import functools
 import time
 from typing import Any, Dict, List, Union
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 
 import torch
 from transformers import LogitsProcessor, PreTrainedTokenizer
@@ -106,7 +112,7 @@ class ToolCallSampler(LogitsProcessor):
         # if one is needed before it is finished, we block until it is done.
         # otherwise, it should be ready by the time we need it.
         self.fsm_results = {}
-        self.executor = ProcessPoolExecutor()
+        self.executor = ThreadPoolExecutor()
 
         self.fsm_tokenizer = FsmTokenizer(tokenizer)
 
@@ -238,7 +244,7 @@ class ToolCallSampler(LogitsProcessor):
 
     def _check_for_function_call(self, input_ids):
         input_ids = input_ids[0]
-        inputs_string = self.tokenizer.decode(input_ids[-self.open_func_token_length :])
+        inputs_string = self.tokenizer.decode(input_ids[-self.open_func_token_length:])
         if inputs_string.strip().endswith(self.open_func_token):
             return True
         else:
@@ -310,10 +316,13 @@ class ToolCallSampler(LogitsProcessor):
                     if self.fsm is None:
                         fsm_key = self.function_key
                         if fsm_key not in self.fsm_results:
+                            ## With the new rust backend, we shouldnt ever need to actually do this. 
+                            ## but it cant really hurt, as it probably accounts for edge cases I cant think of right now.
                             self.fsm = self._wait_for_fsm_result(fsm_key)
                             self.first_fsm_token = True
                         else:
                             self.fsm = self.fsm_results[fsm_key]
+                            self.fsm_state = FSMState(self.fsm.first_state())
                             self.first_fsm_token = True
 
                     if self.first_fsm_token:
@@ -355,5 +364,4 @@ class ToolCallSampler(LogitsProcessor):
 
             t = time.time() - start_time
             self.total_time += t
-            logger.debug("#### Time for iteration: " + str(time.time() - start_time))
         return scores
