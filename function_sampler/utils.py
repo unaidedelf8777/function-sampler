@@ -61,7 +61,7 @@ def compute_fsm(tokenizer: FsmTokenizer, schema):
         tokenizer = FsmTokenizer(tokenizer)
 
     regex = build_regex_from_schema(json_dumps(schema))
-    fsm = create_fsm_index_tokenizer(regex, tokenizer)
+    fsm, _ = create_fsm_index_tokenizer(regex, tokenizer)
     return fsm
 
 

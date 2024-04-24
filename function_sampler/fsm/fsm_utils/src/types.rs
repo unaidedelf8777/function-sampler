@@ -121,9 +121,14 @@ impl FSMInfo {
 
         let special_states_max_id = dfa.get_special_states_max().as_usize() / stride;
 
+        let (accel_max, accel_min) = dfa.get_accel_states_range();
+
+        let accel_states_min = accel_min.as_usize() / stride;
+        let accel_states_max = accel_max.as_usize() / stride;
+
         let mut transitions = BTreeMap::new();
         for (i, chunk) in table.chunks(stride).enumerate() {
-            if i > special_states_max_id {
+            if i > special_states_max_id || (i >= accel_states_min && i <= accel_states_max) {
                 for (j, &state_id) in chunk.iter().enumerate().take(alphabet_len) {
                     if banned_trans_indexes[j] {
                         if !dfa.is_dead_state(state_id) {
