@@ -48,6 +48,21 @@ fn find_predecessors<'a, T: AsRef<[u32]>>(
         .collect()
 }
 
+/// filters out terminal control characters, and control char such as escape, backspace, etc.
+/// model cant use them so we shouldnt waste time computing for them.
+fn is_displayable_char(c: &char) -> bool {
+    if c.is_control() {
+        // Allow specific control characters: Carriage Return, Tab, Line Feed
+        match c {
+            '\r' | '\n' | '\t' => true,
+            _ => false,
+        }
+    } else {
+        // All other characters that are not control characters are allowed
+        true
+    }
+}
+
 impl FSMInfo {
     pub fn from_dfa(dfa: &DFA<&[u32]>) -> Self {
         let stride = dfa.stride();
@@ -87,8 +102,22 @@ impl FSMInfo {
         let alphabet_len = tt.alphabet_len();
 
         let mut alphabet_symbol_mapping = BTreeMap::<String, u32>::new();
+        // array of banned transitions. initialized with true.
+        let mut banned_trans_indexes = vec![true; alphabet_len];
         // Debugging Byte Classes
         let classes = dfa.byte_classes();
+
+        // Iterate over all byte values (0-255)
+        for byte in 0u8..=255 {
+            let class_index = classes.get(byte) as usize; // Get the equivalence class index for the byte
+            let char = byte as char; // Convert the byte to a char
+            if is_displayable_char(&char) {
+                alphabet_symbol_mapping.insert(char.to_string(), class_index as u32);
+            // Insert the mapping
+            } else {
+                banned_trans_indexes[class_index] = false; // Mark the transition as banned due to control character presence.
+            }
+        }
 
         let special_states_max_id = dfa.get_special_states_max().as_usize() / stride;
 
@@ -101,8 +130,11 @@ impl FSMInfo {
         for (i, chunk) in table.chunks(stride).enumerate() {
             if i > special_states_max_id || (i >= accel_states_min && i <= accel_states_max) {
                 for (j, &state_id) in chunk.iter().enumerate().take(alphabet_len) {
-                    if !dfa.is_dead_state(state_id) {
-                        transitions.insert((i as u32, j as u32), state_id.as_u32() / stride_u32);
+                    if banned_trans_indexes[j] {
+                        if !dfa.is_dead_state(state_id) {
+                            transitions
+                                .insert((i as u32, j as u32), state_id.as_u32() / stride_u32);
+                        }
                     }
                 }
             }
