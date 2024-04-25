@@ -149,7 +149,7 @@ impl FSMInfo {
             finals: finals_set,
             transitions: transitions,
             alphabet_symbol_mapping: alphabet_symbol_mapping,
-            states: ((initial_idx as usize)..(table.len() / stride))
+            states: (2..(table.len() / stride))
                 .map(|x| x as u32)
                 .collect(),
         }
