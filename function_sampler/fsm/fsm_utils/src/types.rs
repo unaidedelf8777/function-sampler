@@ -149,7 +149,7 @@ impl FSMInfo {
             finals: finals_set,
             transitions: transitions,
             alphabet_symbol_mapping: alphabet_symbol_mapping,
-            states: (2..(table.len() / stride))
+            states: (0..(table.len() / stride))
                 .map(|x| x as u32)
                 .collect(),
         }
@@ -160,7 +160,8 @@ pub fn build_dfa(pattern: &str, minimize: bool) -> DFA<Vec<u32>> {
     DFA::builder()
         .configure(DFA::config()
             .start_kind(StartKind::Anchored)
-            .minimize(minimize))
+            .minimize(minimize)
+            .accelerate(false))
         .build(pattern)
         .expect("Failed to build DFA. there may be an issue with the pattern, or json schema passed in.")
 }
