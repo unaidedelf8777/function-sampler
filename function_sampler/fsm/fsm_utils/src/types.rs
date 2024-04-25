@@ -133,7 +133,7 @@ impl FSMInfo {
             if i > special_states_max_id || (i >= accel_states_min && i <= match_states_max) {
                 for (j, &state_id) in chunk.iter().enumerate().take(alphabet_len) {
                     if banned_trans_indexes[j] {
-                        if !dfa.is_dead_state(state_id) {
+                        if !dfa.is_special_state(state_id) {
                             transitions
                                 .insert((i as u32, j as u32), state_id.as_u32() / stride_u32);
                         }
