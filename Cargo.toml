@@ -10,7 +10,7 @@ path = "function_sampler/fsm/fsm_utils/src/lib.rs"
 
 # Dependencies for this specific package
 [dependencies]
-regex-automata = { git = "https://github.com/unaidedelf8777/regex.git", rev = "706c51454e7587102c7710662e980d0af5860926" }
+regex-automata = { git = "https://github.com/unaidedelf8777/regex.git", rev = "855b023e2d7c88722dfb0df8c669cda597604260" }
 pyo3 = { version = "0.21.1", features = ["extension-module"] }
 rayon = "1.10.0"
 
