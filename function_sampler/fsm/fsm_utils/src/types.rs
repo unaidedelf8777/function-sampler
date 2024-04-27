@@ -1,13 +1,10 @@
 use regex_automata::{
-    dfa::{
-        dense::{TransitionTable, DFA},
-        Automaton, StartKind,
-    },
-    util::{primitives::StateID, start::Start, syntax::Config as SyntaxConfig},
+    dfa::{dense::DFA, Automaton, StartKind},
+    util::{primitives::StateID, syntax::Config as SyntaxConfig},
     Anchored,
 };
 use rustc_hash::FxHashMap;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub type TokenVocabulary = BTreeMap<String, Vec<u32>>;
 
@@ -47,9 +44,8 @@ impl FSMInfo {
     pub fn from_dfa(dfa: &DFA<&[u32]>) -> Self {
         let stride = dfa.stride();
         let stride_u32 = stride as u32;
-        println!("stride: {:?}", stride);
 
-        let anch = regex_automata::Anchored::Yes;
+        let anch = Anchored::Yes;
 
         let initial = dfa
             .universal_start_state(anch)
@@ -120,12 +116,10 @@ impl FSMInfo {
             .copied()
             .collect();
 
-        println!("finals: {:?}", finals);
-
         let mut finals_set = BTreeSet::<u32>::new(); // Use BTreeSet here
 
         for s in finals.iter() {
-            finals_set.insert((s.as_u32() / stride_u32));
+            finals_set.insert(s.as_u32() / stride_u32);
         }
 
         let reachable_states = reachable_patterns
@@ -138,8 +132,6 @@ impl FSMInfo {
                 }
             })
             .collect::<BTreeSet<_>>();
-
-        println!("states reachable: {:?}", reachable_patterns);
 
         let mut alphabet_symbol_mapping = BTreeMap::<String, u32>::new();
         // Debugging Byte Classes
@@ -171,7 +163,7 @@ impl FSMInfo {
                     {
                         if state_id.as_u32() > 0 {
                             // no transitioning past the final state. this just brings to the dead state, which causes problems.
-                            if !dfa.is_dead_state(state_id) {
+                            if !dfa.is_dead_state(state_id) && !dfa.is_match_state(state_id) {
                                 transitions.insert(
                                     (state.as_u32() / stride_u32, j as u32),
                                     state_id.as_u32() / stride_u32,

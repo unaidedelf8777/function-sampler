@@ -24,3 +24,4 @@ codegen-units = 1
 # make sure to strip any debug info from binary
 # this way it loads to python faster!
 strip = true
+panic = 'abort'
