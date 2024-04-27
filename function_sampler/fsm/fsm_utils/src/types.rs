@@ -3,12 +3,27 @@ use regex_automata::{
         dense::{TransitionTable, DFA},
         Automaton, StartKind,
     },
-    util::{primitives::StateID, start::Start},
+    util::{primitives::StateID, start::Start, syntax::Config as SyntaxConfig},
     Anchored,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use rustc_hash::FxHashMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub type TokenVocabulary = BTreeMap<String, Vec<u32>>;
+
+lazy_static! {
+    // very tiny optim so we dont need to iterate over unnesescarry bytes we will never use.
+    static ref RANGES: [(u8, u8); 8] = [
+        (97, 122),   // Lowercase letters [a-z]
+        (65, 90),    // Uppercase letters [A-Z]
+        (48, 57),    // Digits [0-9]
+        (32, 47),    // Punctuation and symbols (first part)
+        (58, 64),    // Punctuation and symbols (second part)
+        (91, 96),    // Punctuation and symbols (third part)
+        (123, 126),  // Punctuation and symbols (fourth part)
+        (9, 13),     // Whitespace and control characters (tab, newline, carriage return)
+    ];
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FSMInfo {
@@ -28,140 +43,166 @@ pub struct FSMInfo {
     pub states: BTreeSet<u32>,
 }
 
-#[inline(always)]
-fn find_predecessors<'a, T: AsRef<[u32]>>(
-    dfa: &'a DFA<T>,
-    target_state: &StateID,
-    input_symbol: &usize,
-    table: &[StateID],
-) -> Vec<StateID> {
-    dfa.states() // Get pre-multiplied indices // Keep track of original state index
-        .filter_map(|start_index| {
-            let id = start_index.id();
-            let index = id.as_usize() + *input_symbol; // Dereference input_symbol here, only once per invocation
-            if &table[index] == target_state {
-                Some(id)
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-/// filters out terminal control characters, and control char such as escape, backspace, etc.
-/// model cant use them so we shouldnt waste time computing for them.
-fn is_displayable_char(c: &char) -> bool {
-    if c.is_control() {
-        // Allow specific control characters: Carriage Return, Tab, Line Feed
-        match c {
-            '\r' | '\n' | '\t' => true,
-            _ => false,
-        }
-    } else {
-        // All other characters that are not control characters are allowed
-        true
-    }
-}
-
 impl FSMInfo {
     pub fn from_dfa(dfa: &DFA<&[u32]>) -> Self {
         let stride = dfa.stride();
         let stride_u32 = stride as u32;
-        let initial: StateID = dfa
-            .starts()
-            .find_map(|(id, anchored, start_type)| {
-                if anchored.is_anchored() && start_type == Start::Text {
-                    Some(id)
+        println!("stride: {:?}", stride);
+
+        let anch = regex_automata::Anchored::Yes;
+
+        let initial = dfa
+            .universal_start_state(anch)
+            .expect("No Start state for the DFA found. this is un-recoverable.");
+
+        let mut incoming = FxHashMap::default();
+        let mut todo = vec![initial];
+        incoming.insert(initial, Vec::new());
+
+        // TIME: 1.5ms
+        while let Some(s) = todo.pop() {
+            for b in 0..=255 {
+                let s2 = dfa.next_state(s, b);
+                incoming.entry(s2).or_insert_with(|| {
+                    todo.push(s2);
+                    Vec::new()
+                });
+                incoming.get_mut(&s2).unwrap().push(s);
+            }
+        }
+
+        let states = incoming.keys().copied().collect::<Vec<_>>();
+        let mut reachable_patterns = FxHashMap::<StateID, Vec<bool>>::default();
+
+        for s in &states {
+            let mut patterns = vec![false; dfa.pattern_len()];
+            let s2 = dfa.next_eoi_state(*s);
+            if dfa.is_match_state(s2) {
+                for idx in 0..dfa.match_len(s2) {
+                    let idx = dfa.match_pattern(s2, idx).as_usize();
+                    patterns[idx] = true;
+                }
+            }
+            reachable_patterns.insert(*s, patterns);
+        }
+
+        loop {
+            let mut num_set = 0;
+
+            for s in &states {
+                let ours = reachable_patterns.get(s).unwrap().clone();
+                for o in &incoming[s] {
+                    let theirs = reachable_patterns.get(o).unwrap();
+                    let mut tmp = ours.clone();
+                    tmp.iter_mut()
+                        .zip(theirs.iter())
+                        .for_each(|(t, &o)| *t |= o);
+                    if tmp != *theirs {
+                        num_set += 1;
+                        reachable_patterns.insert(*o, tmp);
+                    }
+                }
+            }
+            if num_set == 0 {
+                break;
+            }
+        }
+
+        let mut states_idx = states.iter().map(|x| x.as_usize()).collect::<Vec<_>>();
+        states_idx.sort();
+
+        let transitions = dfa.get_transitions();
+        let table = transitions.table();
+
+        let finals: Vec<StateID> = states
+            .iter()
+            .filter(|&&s| dfa.is_match_state(dfa.next_eoi_state(s)))
+            .copied()
+            .collect();
+
+        println!("finals: {:?}", finals);
+
+        let mut finals_set = BTreeSet::<u32>::new(); // Use BTreeSet here
+
+        for s in finals.iter() {
+            finals_set.insert((s.as_u32() / stride_u32));
+        }
+
+        let reachable_states = reachable_patterns
+            .iter()
+            .filter_map(|(&state, reachability)| {
+                if reachability.len() == 1 && reachability[0] {
+                    Some(state)
                 } else {
                     None
                 }
             })
-            .expect(
-                "PANIC!: No valid initial state found. This should never happen.\n\
-        Please open an issue at `https://github.com/unaidedelf8777/function-sampler/issues`, \
-        and attach the function or json-spec you used.",
-            );
+            .collect::<BTreeSet<_>>();
 
-        let initial_idx = initial.as_u32() / stride_u32; // Calculate the initial index.
-
-        let tt: TransitionTable<&[u32]> = dfa.get_transitions();
-        let table = tt.table();
-        let finals = dfa.get_finals();
-
-        let mut finals_set = BTreeSet::<u32>::new(); // Use BTreeSet here
-
-        let eoi_index = dfa.alphabet_len() - 1;
-
-        for ms in finals.iter() {
-            let matches = find_predecessors(dfa, &StateID::from(*ms), &eoi_index, &table);
-            for m in matches {
-                finals_set.insert(m.as_u32() / stride_u32); // Store the final states as u32 in BTreeSet
-            }
-        }
-
-        let alphabet_len = tt.alphabet_len();
+        println!("states reachable: {:?}", reachable_patterns);
 
         let mut alphabet_symbol_mapping = BTreeMap::<String, u32>::new();
-        // array of banned transitions. initialized with true.
-        let mut banned_trans_indexes = vec![true; alphabet_len];
         // Debugging Byte Classes
         let classes = dfa.byte_classes();
 
+        let alphabet_len = dfa.alphabet_len();
+
         // Iterate over all byte values (0-255)
-        for byte in 0u8..=255 {
-            let class_index = classes.get(byte) as usize; // Get the equivalence class index for the byte
-            let char = byte as char; // Convert the byte to a char
-            if is_displayable_char(&char) {
+        for &(start, end) in RANGES.iter() {
+            for byte in start..=end {
+                let class_index = classes.get(byte) as usize;
+                let char = byte as char;
                 alphabet_symbol_mapping.insert(char.to_string(), class_index as u32);
-            // Insert the mapping
-            } else {
-                banned_trans_indexes[class_index] = false; // Mark the transition as banned due to control character presence.
             }
         }
 
-        let special_states_max_id = dfa.get_special_states_max().as_usize() / stride;
-
-        let (accel_max, accel_min) = dfa.get_accel_states_range();
-        let (match_max, match_min) = dfa.get_match_states_range();
-
-        let accel_states_min = accel_min.as_usize() / stride;
-
-        let match_states_max = match_max.as_usize() / stride;
-
         let mut transitions = BTreeMap::new();
-        for (i, chunk) in table.chunks(stride).enumerate() {
-            if i > special_states_max_id || (i >= accel_states_min && i <= match_states_max) {
-                for (j, &state_id) in chunk.iter().enumerate().take(alphabet_len) {
-                    if banned_trans_indexes[j] {
-                        if !dfa.is_special_state(state_id) {
-                            transitions
-                                .insert((i as u32, j as u32), state_id.as_u32() / stride_u32);
+        for state in &states {
+            if let Some(reachable_vec) = reachable_patterns.get(state) {
+                if reachable_vec.get(0).copied().unwrap_or(false) {
+                    let i = state.as_usize() / stride;
+                    for (j, &state_id) in table
+                        .chunks(stride)
+                        .nth(i)
+                        .unwrap()
+                        .iter()
+                        .enumerate()
+                        .take(alphabet_len)
+                    {
+                        if state_id.as_u32() > 0 {
+                            // no transitioning past the final state. this just brings to the dead state, which causes problems.
+                            if !dfa.is_dead_state(state_id) {
+                                transitions.insert(
+                                    (state.as_u32() / stride_u32, j as u32),
+                                    state_id.as_u32() / stride_u32,
+                                );
+                            }
                         }
                     }
                 }
             }
         }
 
-        println!("num states: {:?}", table.len() / stride);
-
         FSMInfo {
-            initial: initial_idx,
+            initial: initial.as_u32() / stride_u32,
             finals: finals_set,
             transitions: transitions,
             alphabet_symbol_mapping: alphabet_symbol_mapping,
-            states: (0..(table.len() / stride))
-                .map(|x| x as u32)
-                .collect(),
+            states: reachable_states
+                .iter()
+                .map(|x| x.as_u32() / stride_u32)
+                .collect::<BTreeSet<_>>(),
         }
     }
 }
 
-pub fn build_dfa(pattern: &str, minimize: bool) -> DFA<Vec<u32>> {
+pub fn build_dfa(pattern: &str, _minimize: bool) -> DFA<Vec<u32>> {
     DFA::builder()
         .configure(DFA::config()
-            .start_kind(StartKind::Anchored)
-            .minimize(minimize)
-            .accelerate(false))
+            .start_kind(StartKind::Anchored))
+        .syntax(SyntaxConfig::new()
+            .unicode(false)
+            .utf8(false))
         .build(pattern)
         .expect("Failed to build DFA. there may be an issue with the pattern, or json schema passed in.")
 }
@@ -174,12 +215,20 @@ mod tests {
     #[test]
     fn test_fsm_from_dfa_conversion() {
         // Define a simple pattern that can be used to build the DFA
-        let pattern = r#"\{\s*"location"\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*"format"\s*:\s*("celsius"|"fahrenheit")\s*\}"#;
+        let pattern = r#"\{[\n ]*"restaurant_name"[\n ]*:[\n ]*"(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"[\n ]*,([\n ]*"reservation_date"[\n ]*:[\n ]*(?:\d{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[1-2][0-9]|3[0-1])[\n ]*,)?[\n ]*"reservation_time"[\n ]*:[\n ]*(2[0-3]|[01][0-9]):([0-5][0-9]):([0-5][0-9])(\\.[0-9]+)?(Z)?([\n ]*,[\n ]*"party_size"[\n ]*:[\n ]*(-)?(0|[1-9][0-9]*))?([\n ]*,[\n ]*"contact_number"[\n ]*:[\n ]*(-)?(0|[1-9][0-9]*))?[\n ]*\}"#;
 
         let start_bt = Instant::now();
         // Build the DFA using the provided build_dfa function
         let dfa = build_dfa(pattern, true);
+        println!("{:?}", dfa);
         let end_bt = start_bt.elapsed();
+
+        println!(
+            "DFA STATE 1: {:?}",
+            dfa.states()
+                .nth(60)
+                .map(|state| state.transitions().collect::<Vec<_>>())
+        );
 
         println!("Time taken to build minimized DFA: {:?}", end_bt);
 
@@ -194,7 +243,7 @@ mod tests {
         // Convert the DFA to our FSMInfo structure
         let fsm_info = FSMInfo::from_dfa(&dfa.as_ref());
         let end = start.elapsed();
-        println!("{:?}", fsm_info);
+        println!("FSM Info: {:?}", fsm_info);
         println!("transitions length: {:?}", fsm_info.transitions.len());
         println!("Time taken: {:?}", end);
     }

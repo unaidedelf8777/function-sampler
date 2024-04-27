@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 use tokenizer_index::create_fsm_index_end_to_end_py;
