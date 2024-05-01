@@ -25,3 +25,8 @@ codegen-units = 1
 # this way it loads to python faster!
 strip = true
 panic = 'abort'
+
+
+[features]
+default = []
+e2e_experimental = []

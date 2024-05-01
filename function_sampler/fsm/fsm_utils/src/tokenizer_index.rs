@@ -17,13 +17,14 @@ use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Condvar, Mutex};
 
-use crate::{
-    lazy_index::LazyFSMIndex,
-    types::{build_dfa, FSMInfo, TokenVocabulary},
-};
+use crate::types::{FSMInfo, TokenVocabulary, VocabTrie, VocabTrieBuilder};
 
-/// ### `walk_fsm`
-///
+use crate::{lazy_index::LazyFSMIndex, types::PyFSMInfo};
+use std::convert::TryFrom;
+
+#[cfg(feature = "e2e_experimental")]
+use crate::types::build_dfa;
+
 /// This function performs a walk through a finite state machine (FSM) based on the provided input string starting from a specified state.
 ///
 /// **Arguments:**
@@ -41,65 +42,50 @@ use crate::{
 /// If a substring matches and leads to a state that is a final state, it records this position. Depending on the `full_match` flag,
 /// it may return early or continue to process until all substrings are attempted. The function is sensitive to the ordering of characters
 /// and transitions, ensuring that the longest possible matches are considered first.
-fn walk_fsm(
-    fsm_info: &FSMInfo,
-    input_string: &str,
-    start_state: u32,
-    full_match: bool,
-) -> Vec<u32> {
+fn walk_fsm(fsm_info: &FSMInfo, input_string: &str, start_state: u32, full_match: bool) -> Vec<u32> {
     let mut state = start_state;
     let mut accepted_states = Vec::new();
     let mut last_final_idx: Option<usize> = None;
 
-    let mut current_pos = 0;
-    let input_chars: Vec<char> = input_string.chars().collect();
+    for (i, symbol) in input_string.chars().enumerate() {
+        let symbol_str = symbol.to_string();
+        let trans_key = fsm_info.alphabet_symbol_mapping.get(&symbol_str);
 
-    while current_pos < input_chars.len() {
-        let mut found = false;
+        // Handle case when there is no valid transition key (equivalent to `alphabet_symbol_mapping.get(symbol, alphabet_anything_value) is None`)
+        let new_state = match trans_key {
+            Some(key) => fsm_info.transitions.get(&(state, *key)),
+            None => None,
+        };
 
-        // Attempt to match longer substrings first, ensuring multi-character sequences are prioritized
-        for len in (1..=input_chars.len() - current_pos).rev() {
-            let possible_match: String =
-                input_chars[current_pos..current_pos + len].iter().collect();
+        if let Some(&new_state) = new_state {
+            state = new_state;
 
-            if let Some(&trans_key) = fsm_info.alphabet_symbol_mapping.get(&possible_match) {
-                if let Some(&new_state) = fsm_info.transitions.get(&(state, trans_key)) {
-                    state = new_state;
-                    if fsm_info.finals.contains(&state) {
-                        last_final_idx = Some(accepted_states.len() + 1);
-                    }
-                    accepted_states.push(state);
-                    current_pos += len; // Move past the matched substring
-                    found = true;
-                    break;
-                }
+            if fsm_info.finals.contains(&state) {
+                last_final_idx = Some(i + 1);
             }
-        }
 
-        if !found {
+            accepted_states.push(state);
+        } else {
+            // If no new state or no valid transition key, handle as per the Python code when `new_state is None`
             if !full_match && last_final_idx.is_some() {
-                // Non-full match and we've previously encountered a final state
                 return accepted_states
                     .into_iter()
                     .take(last_final_idx.unwrap())
                     .collect();
-            } else {
-                // No match found, or a full match is required
-                return vec![];
             }
+
+            return Vec::new(); // Early return with an empty list if full match is required or no final state has been reached.
         }
     }
 
-    // Full match checks
-    if full_match && last_final_idx.map_or(true, |idx| idx != accepted_states.len()) {
-        return vec![]; // Full match required but last character didn't result in a final state
+    // Final match condition to verify if the last index corresponds to a final state in full match mode
+    if full_match && last_final_idx.map_or(true, |idx| idx - 1 != input_string.chars().count()) {
+        Vec::new()
+    } else {
+        accepted_states
     }
-
-    accepted_states
 }
 
-/// ### `state_scan_tokens` Function
-///
 /// This function scans a set of tokens against an FSM to determine the resulting states from a given start state.
 ///
 /// **Arguments:**
@@ -117,34 +103,38 @@ fn walk_fsm(
 #[inline(always)]
 fn state_scan_tokens(
     fsm_info: &FSMInfo,
-    vocabulary: &TokenVocabulary,
+    vocab_trie: &VocabTrie,
+    vocabulary: &Arc<TokenVocabulary>,
     start_state: u32,
 ) -> BTreeSet<(u32, u32)> {
-    vocabulary
-        .iter()
-        .flat_map(|(token, token_ids)| {
-            // For each token, perform the FSM walk in parallel.
-            let state_seq = walk_fsm(fsm_info, token, start_state, false);
+    let mut results = BTreeSet::new();
+    let mut stack: Vec<u32> = vocab_trie.root_tokens.clone();
 
-            if state_seq.len() < token.chars().count() {
-                None
-            } else {
-                Some(
-                    token_ids
-                        .iter()
-                        .map(move |&token_id| (token_id, *state_seq.last().unwrap()))
-                        .collect::<Vec<_>>(),
-                )
+    // Process the tokens using the stack
+    while let Some(token_idx) = stack.pop() {
+        let token = &vocab_trie.idx_to_token_str[token_idx as usize];
+        let state_seq = walk_fsm(fsm_info, token, start_state, false);
+
+        if state_seq.len() == token.len() {
+            if let Some(token_ids) = vocabulary.get(token) {
+                let last_state = *state_seq.last().unwrap(); // Safe to unwrap because we check length == token.len()
+                for &token_id in token_ids {
+                    results.insert((token_id, last_state));
+                }
             }
-        })
-        // Flatten the nested structure into a single collection of pairs.
-        .flatten()
-        // Collect the results into a HashSet to ensure uniqueness.
-        .collect::<BTreeSet<(u32, u32)>>()
+        }
+
+        // Always add successors to the stack
+        if let Some(next_token_idxs) = vocab_trie.parent_children_map.get(&token_idx) {
+            for &next_token_idx in next_token_idxs {
+                stack.push(next_token_idx);
+            }
+        }
+    }
+
+    results
 }
 
-/// ### `create_fsm_index_end_to_end_parallel` Function
-///
 /// Creates a mapping of FSM states to vocabulary tokens in parallel, facilitating quick construction of state-to-token maps for large vocabularies.
 ///
 /// **Arguments:**
@@ -161,13 +151,15 @@ fn state_scan_tokens(
 /// It fills `return_to` with these mappings and uses `state_notifiers` to signal the completion of the computation for each state,
 ///  enabling efficient multi-threaded computation and synchronization.
 pub fn create_fsm_index_end_to_end_parallel(
-    fsm_info: Arc<FSMInfo>,
-    vocabulary: Arc<TokenVocabulary>,
-    return_to: Arc<Mutex<BTreeMap<u32, BTreeMap<u32, u32>>>>,
-    state_notifiers: Arc<Mutex<BTreeMap<u32, Arc<(Mutex<bool>, Condvar)>>>>,
+    fsm_info: &Arc<FSMInfo>,
+    vocabulary: &Arc<TokenVocabulary>,
+    return_to: &Arc<Mutex<BTreeMap<u32, BTreeMap<u32, u32>>>>,
+    state_notifiers: &Arc<Mutex<BTreeMap<u32, Arc<(Mutex<bool>, Condvar)>>>>,
 ) {
+    let vocab_trie = Arc::new(vocabulary.to_vocab_trie());
     fsm_info.states.par_iter().for_each(|&start_state| {
-        let token_ids_end_states = state_scan_tokens(&fsm_info, &vocabulary, start_state);
+        let token_ids_end_states =
+            state_scan_tokens(&fsm_info, &vocab_trie, &vocabulary, start_state);
 
         let mut map = BTreeMap::new();
         for &(token_id, end_state) in &token_ids_end_states {
@@ -197,7 +189,6 @@ pub fn create_fsm_index_end_to_end_parallel(
     });
 }
 
-
 /// Create an FSM state-to-vocabulary map/index through end-to-end token parsing.
 ///
 /// Args:
@@ -207,9 +198,26 @@ pub fn create_fsm_index_end_to_end_parallel(
 /// Returns:
 ///     (BTreeMap<u32, BTreeMap<u32, u32>>, u32, Vec<u32>): A mapping of FSM states to vocabulary token sets,
 ///     the initial state, and a vector of final states.
+/// this feature is in BETA and may not work reliably. try it yourself and see if it works for your regex.
 #[pyfunction(name = "create_fsm_index_end_to_end")]
 #[pyo3(text_signature = "(fsm_info, vocabulary, /)")]
 pub fn create_fsm_index_end_to_end_py(
+    py: Python<'_>,
+    py_fsm_info: PyFSMInfo,
+    vocabulary: TokenVocabulary,
+    eos_token_id: u32,
+) -> LazyFSMIndex {
+    let results = py.allow_threads(move || {
+        let fsm_info = FSMInfo::try_from(&py_fsm_info).unwrap();
+        return LazyFSMIndex::new(fsm_info, vocabulary, eos_token_id);
+    });
+    return results;
+}
+
+#[cfg(feature = "e2e_experimental")]
+#[pyfunction(name = "pattern_to_token_subsets")]
+#[pyo3(text_signature = "(fsm_info, vocabulary, /)")]
+pub fn pattern_to_token_subsets_py(
     py: Python<'_>,
     pattern: String,
     vocabulary: TokenVocabulary,

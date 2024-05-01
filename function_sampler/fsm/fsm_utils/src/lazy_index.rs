@@ -1,6 +1,10 @@
+
 use pyo3::prelude::*;
+
 use std::collections::BTreeMap;
+
 use std::sync::{Arc, Condvar, Mutex};
+
 use std::thread;
 
 use crate::{
@@ -44,6 +48,7 @@ pub struct LazyFSMIndex {
 /// We gate the creation of new indexes in a impl block seperate to that of the definition
 /// of all of the python methods, since the only way to construct a new LazyFSMIndex is through
 /// `create_fsm_index_end_to_end_py` function interfaced to python.
+
 impl LazyFSMIndex {
     pub fn new(fsm_info: FSMInfo, vocabulary: TokenVocabulary, eos_token_id: u32) -> Self {
         let fsm_info_arc = Arc::new(fsm_info);
@@ -65,10 +70,10 @@ impl LazyFSMIndex {
         // Start the computation in a new thread
         thread::spawn(move || {
             create_fsm_index_end_to_end_parallel(
-                fsm_info_arc,
-                vocabulary_arc,
-                results_clone,
-                state_notifiers_clone,
+                &fsm_info_arc,
+                &vocabulary_arc,
+                &results_clone,
+                &state_notifiers_clone,
             );
             *computing_finished_clone.lock().unwrap() = true;
         });
@@ -87,6 +92,7 @@ impl LazyFSMIndex {
 }
 
 /// implementation of all the python methods for the LazyFSMIndex struct.
+
 #[pymethods]
 impl LazyFSMIndex {
     /// Retrieves the state map for a given state, waiting if it's not immediately available.
@@ -122,18 +128,27 @@ impl LazyFSMIndex {
     }
 
     pub fn next_state(&self, state: i32, token_id: u32) -> Option<i32> {
+
+        // check if they are alias states first ( -1, or 0 )
+        // state 0 is alias for the first state
+        // -1 alias for the last state.
         // if the state is already final, then the next state can only ever be final.
         if state == -1 {
             return Some(-1);
         }
+
+
 
         // Check if the token ID is the end-of-sequence or the state is a final state
         if token_id == self.eos_token_id || self.fsm_info.finals.contains(&(state as u32)) {
             return Some(-1);
         }
 
+        let current_state = if state == 0 { self.first_state } else { state as u32 };
+
+
         // Attempt to find the next state using the get_state_map method
-        let token_map = self.get_state_map(state as u32);
+        let token_map = self.get_state_map(current_state);
         token_map
             .and_then(|map| map.get(&token_id).copied().map(|s| s as i32))
             // if the token to next state pair is not found, return -1, this isnt something we can blindly repair.
@@ -163,14 +178,17 @@ impl LazyFSMIndex {
         // this will block the thread until we can return the full result.
         while !self.is_computing_finished() {
             // Sleep for a short time to avoid busy waiting
-            thread::sleep(std::time::Duration::from_millis(10));
+            thread::sleep(std::time::Duration::from_millis(2));
         }
         // finished. return a clone.
         self.states_to_token_maps.lock().unwrap().clone()
     }
 
-    pub fn allowed_token_ids(&self, state: u32) -> Vec<i32> {
-        match self.get_state_map(state) {
+    pub fn allowed_token_ids(&self, state: i32) -> Vec<i32> {
+        if state == -1 {
+            return vec![-2];
+        }
+        match self.get_state_map(state as u32) {
             Some(next_tokens_to_end_states) => {
                 // Collect all keys (token IDs) from the map and convert them to i32
                 next_tokens_to_end_states
@@ -185,9 +203,5 @@ impl LazyFSMIndex {
                 vec![-2]
             }
         }
-    }
-
-    pub fn first_state(&self) -> u32 {
-        self.first_state
     }
 }

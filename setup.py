@@ -14,7 +14,9 @@ rust_extensions = [
     RustExtension(
         f"function_sampler.fsm.fsm_utils",  # Python package.module for the Rust extension
         f"./Cargo.toml",  # Path to Cargo.toml of Rust extension
-        binding=Binding.PyO3
+        binding=Binding.PyO3,
+        features=["default"],
+        args=["--profile=release"]
     ),
 ]
 

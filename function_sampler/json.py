@@ -108,7 +108,7 @@ def to_regex(
         whitespace_pattern = WHITESPACE
 
     if "properties" in instance:
-        regex = ""
+        regex = r""
         regex += r"\{"
         properties = instance["properties"]
         required_properties = instance.get("required", [])
@@ -148,7 +148,7 @@ def to_regex(
                 possible_patterns.append(pattern)
             regex += f"({'|'.join(possible_patterns)})?"
 
-        regex += f"{whitespace_pattern}" + r"\}"
+        regex += f"{whitespace_pattern}" + r" \}"
 
         return regex
 

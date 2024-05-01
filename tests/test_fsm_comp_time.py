@@ -65,6 +65,19 @@ s = [
 
 function_sampler.cache.disable_cache()
 
+test_patterns = [
+    r"""[a-z0-9!#$%&'*+/=?^_{|}~-]+(?:.[a-z0-9!#$%&'*+/=?^_{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?""",
+    r"""\+?\d{1,4}?[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}""",
+    r"""\+?[1-9][0-9]{7,14}""",
+    r"""([1-9]|0[1-9]|1[0-9]|2[0-9]|3[0-1])(\.|-|/)([1-9]|0[1-9]|1[0-2])(\.|-|/)([0-9][0-9]|19[0-9][0-9]|20[0-9][0-9])|([0-9][0-9]|19[0-9][0-9]|20[0-9][0-9])(\.|-|/)([1-9]|0[1-9]|1[0-2])(\.|-|/)([1-9]|0[1-9]|1[0-9]|2[0-9]|3[0-1])""",
+    r"""(0?[1-9]|1[0-2]):[0-5]\d\s?(am|pm)?""",
+    r"""(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)""",
+    r"""(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?""",
+    r"""\d{3}-\d{2}-\d{4}""",
+    r"""\{[\n ]*"name"[\n ]*:[\n ]*"(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.){,10}"[\n ]*,[\n ]*"age"[\n ]*:[\n ]*(0|[1-9][0-9]*)[\n ]*,[\n ]*"armor"[\n ]*:[\n ]*("leather"|"chainmail"|"plate")[\n ]*,[\n ]*"strength"[\n ]*:[\n ]*(0|[1-9][0-9]*)[\n ]*\}""",
+    r"""\{[\n ]*"id"[\n ]*:[\n ]*(-)?((0|[1-9][0-9]*))(\.[0-9]+)?([eE][+-][0-9]+)?[\n ]*,[\n ]*"work"[\n ]*:[\n ]*\{[\n ]*"id"[\n ]*:[\n ]*(-)?((0|[1-9][0-9]*))(\.[0-9]+)?([eE][+-][0-9]+)?[\n ]*,[\n ]*"name"[\n ]*:[\n ]*"(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"[\n ]*,[\n ]*"composer"[\n ]*:[\n ]*\{[\n ]*"id"[\n ]*:[\n ]*(-)?((0|[1-9][0-9]*))(\.[0-9]+)?([eE][+-][0-9]+)?[\n ]*,[\n ]*"name"[\n ]*:[\n ]*"(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"[\n ]*,[\n ]*"functions"[\n ]*:[\n ]*\[("(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*")(,("(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"))*\][\n ]*\}[\n ]*\}[\n ]*,[\n ]*"recording_artists"[\n ]*:[\n ]*\[(\{[\n ]*"id"[\n ]*:[\n ]*(-)?((0|[1-9][0-9]*))(\.[0-9]+)?([eE][+-][0-9]+)?[\n ]*,[\n ]*"name"[\n ]*:[\n ]*"(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"[\n ]*,[\n ]*"functions"[\n ]*:[\n ]*\[("(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*")(,("(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"))*\][\n ]*\})(,(\{[\n ]*"id"[\n ]*:[\n ]*(-)?((0|[1-9][0-9]*))(\.[0-9]+)?([eE][+-][0-9]+)?[\n ]*,[\n ]*"name"[\n ]*:[\n ]*"(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"[\n ]*,[\n ]*"functions"[\n ]*:[\n ]*\[("(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*")(,("(?:[^"\\\x00-\x1f\x7f-\x9f]|\\.)*"))*\][\n ]*\}))*\][\n ]*\}""",
+]
+
 
 # A function to perform the benchmark test
 def test_benchmark_compile_fsm():
@@ -80,40 +93,34 @@ def test_benchmark_compile_fsm():
     )
 
     # Benchmark phase
+    for pattern in test_patterns:
+        total_time = 0
+        iterations = 4  # Set a constant number of iterations
+        for i in range(1, iterations + 1):
+            print("starting timer")
+            start_time = time.perf_counter()
+            fsm, empty_token_ids = create_fsm_index_tokenizer(pattern, tokenizer)
+            states_to_subsets = fsm.get_states_to_token_subsets()
+            end_time = time.perf_counter()
+            computation_time = end_time - start_time
+            total_time += computation_time
 
-    for i in range(4):
-        if i % 1 == 0:
-            print("starting timer")
-            start_time_rs = time.perf_counter()
-            fsm, empty_token_ids = create_fsm_index_tokenizer(pattern1, tokenizer)
-            end_time_rs = time.perf_counter()
+            # Debug prints
+            is_states_to_token_subsets_sane = len(states_to_subsets) > 25  # non-specific, but less than 25 keys it's probably wrong.
+            print(f"Computation sane? : {is_states_to_token_subsets_sane}")
             print(fsm)
-            print(f"Time taken for Rust: {end_time_rs - start_time_rs} seconds")
-            clear_cache()
-            disable_cache()
+            print(f"Time taken for Rust: {computation_time} seconds")
             print("====================================")
-            print(f"first state: {fsm.first_state()}")
-            print(
-                f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(fsm.first_state())]}"
-            )
+            print(f"first state: {0}")
+            # Uncomment the following line if the decoding function and the `allowed_token_ids` method are correctly defined and relevant
+            # print(f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(0)]}")
             print("====================================")
-            time.sleep(3)
-        elif i % 2 == 0:
-            print("starting timer")
-            start_time_rs = time.perf_counter()
-            fsm, empty_token_ids = create_fsm_index_tokenizer(pattern2, tokenizer)
-            end_time_rs = time.perf_counter()
-            print(fsm)
-            print(f"Time taken for Rust: {end_time_rs - start_time_rs} seconds")
-            clear_cache()
-            disable_cache()
-            print("====================================")
-            print(f"first state: {fsm.first_state()}")
-            print(
-                f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(fsm.first_state())]}"
-            )
-            print("====================================")
-            time.sleep(3)
+
+        average_time = total_time / iterations
+        print("************************************")
+        print(f"Average time for pattern '{pattern}': {average_time} seconds")
+        print("************************************")
+        
 
 
 # Run the benchmark test

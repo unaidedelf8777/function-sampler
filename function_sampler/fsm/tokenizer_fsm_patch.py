@@ -16,6 +16,7 @@ class Tokenizer(Protocol, Hashable):
     pad_token_id: int
     vocabulary: Dict[str, int]
     special_tokens: Set[int]
+    
 
     @abstractmethod
     def encode(
@@ -49,6 +50,7 @@ class TransformerTokenizer(Tokenizer):
 
     def __init__(self, tokenizer: "PreTrainedTokenizer", **kwargs):
         self.tokenizer = tokenizer
+        self.hash = None
         self.eos_token_id = self.tokenizer.eos_token_id
         self.eos_token = self.tokenizer.eos_token
 
@@ -62,6 +64,8 @@ class TransformerTokenizer(Tokenizer):
         self.special_tokens = set(self.tokenizer.all_special_tokens)
 
         self.vocabulary = self.tokenizer.get_vocab()
+
+        self.__hash__()
 
     def encode(
         self, prompt: Union[str, List[str]], **kwargs
@@ -96,5 +100,9 @@ class TransformerTokenizer(Tokenizer):
 
     def __hash__(self):
         from datasets.fingerprint import Hasher
-
-        return hash(Hasher.hash(self.tokenizer))
+        if self.hash is not None:
+            return self.hash
+        
+        else:
+            self.hash =  hash(Hasher.hash(self.tokenizer))
+            return self.hash
