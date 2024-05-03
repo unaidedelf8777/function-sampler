@@ -29,7 +29,7 @@ lazy_static! {
     ];
 }
 
-/// `TokenVocabulary` is a type alias for a `BTreeMap` where the key is a `String` representing a token, and the value is a `Vec<u32>` containing token IDs. This structure is used to store and manage tokens for processing with finite state machines (FSMs), ensuring ordered access and efficient retrieval without hashing overhead.
+/// `TokenVocabulary` is a type alias for a `BTreeMap` where the key is a `char` representing a token, and the value is a `Vec<u32>` containing token IDs. This structure is used to store and manage tokens for processing with finite state machines (FSMs), ensuring ordered access and efficient retrieval without hashing overhead.
 pub type TokenVocabulary = BTreeMap<String, Vec<u32>>;
 
 #[derive(Debug, Clone, FromPyObject)]
@@ -40,10 +40,10 @@ pub struct PyFSMInfo {
     finals: HashSet<u32>,
     #[pyo3(item("transitions"))]
     transitions: HashMap<(u32, u32), u32>,
-    #[pyo3(item("trans_key_to_states"))]
-    trans_key_to_states: HashMap<u32, Vec<u32>>,
-    #[pyo3(item("alphabet_anything_value"))]
-    alphabet_anything_value: u32,
+    //#[pyo3(item("trans_key_to_states"))]
+    //trans_key_to_states: HashMap<u32, Vec<u32>>,
+    //#[pyo3(item("alphabet_anything_value"))]
+    //alphabet_anything_value: u32,
     #[pyo3(item("alphabet_symbol_mapping"))]
     alphabet_symbol_mapping: HashMap<String, u32>,
 }
@@ -54,46 +54,24 @@ impl TryFrom<&PyFSMInfo> for FSMInfo {
     type Error = &'static str; // Simplify error handling for this example
 
     fn try_from(py_info: &PyFSMInfo) -> Result<Self, Self::Error> {
-        // Convert initial state ensuring it is non-negative and within u32 range
-        let initial: u32 = py_info
-            .initial
-            .try_into()
-            .map_err(|_| "Initial state ID out of range")?;
+        // Direct assignment as the type is assumed to be correct
+        let initial: u32 = py_info.initial;
 
-        // Convert final states ensuring all are within u32 range
-        let mut finals = BTreeSet::new();
-        for &final_state in &py_info.finals {
-            finals.insert(
-                final_state
-                    .try_into()
-                    .map_err(|_| "Final state ID out of range")?,
-            );
-        }
+        // Directly use the values assuming they are already u32
+        let finals = py_info.finals.iter().copied().collect::<BTreeSet<u32>>();
 
-        // Convert transitions ensuring all indices and states are within u32 range
+        // Transitions conversion assuming all parts are already u32
         let mut transitions = BTreeMap::new();
         for (&(from_state, input), &to_state) in &py_info.transitions {
-            let from_u32 = from_state
-                .try_into()
-                .map_err(|_| "Transition from-state ID out of range")?;
-            let input_u32 = input
-                .try_into()
-                .map_err(|_| "Transition input ID out of range")?;
-            let to_u32 = to_state
-                .try_into()
-                .map_err(|_| "Transition to-state ID out of range")?;
-
-            transitions.insert((from_u32, input_u32), to_u32);
+            transitions.insert((from_state, input), to_state);
         }
 
-        // Convert alphabet mapping ensuring values are within u32 range
-        let mut alphabet_symbol_mapping = BTreeMap::new();
-        for (symbol, &trans_key) in &py_info.alphabet_symbol_mapping {
-            let trans_u32 = trans_key
-                .try_into()
-                .map_err(|_| "Alphabet symbol mapping value out of range")?;
-            alphabet_symbol_mapping.insert(symbol.clone(), trans_u32);
-        }
+        // Alphabet symbol mapping conversion assuming all values are already u32
+        let alphabet_symbol_mapping = py_info
+            .alphabet_symbol_mapping
+            .iter()
+            .map(|(symbol, &trans_key)| (symbol.clone(), trans_key))
+            .collect::<BTreeMap<String, u32>>();
 
         // Extract states from transitions
         let mut states = BTreeSet::new();
@@ -294,7 +272,7 @@ impl FSMInfo {
 #[derive(Clone)]
 pub(crate) struct VocabTrie {
     pub parent_children_map: FxHashMap<u32, Vec<u32>>, // Mapping from token prefix ID to children token IDs
-    pub idx_to_token_str: Vec<String>,                // Mapping from token ID to token string
+    pub idx_to_token_str: Vec<String>,                 // Mapping from token ID to token string
     // pub token_str_to_idx: BTreeMap<String, u32>,   // Mapping from token string to token ID
     pub root_tokens: Vec<u32>, // List of token indices that have no prefixes
 }
@@ -311,8 +289,7 @@ impl VocabTrieBuilder for TokenVocabulary {
         let mut token_str_to_idx = FxHashMap::default();
         let mut root_tokens = Vec::new();
 
-        let mut token_id: u32 = 0;
-        for (token, _) in self.iter() {
+        for (token_id, (token, _)) in (0_u32..).zip(self.iter()) {
             idx_to_token_str.push(token.clone());
             token_str_to_idx.insert(token.clone(), token_id);
 
@@ -339,8 +316,6 @@ impl VocabTrieBuilder for TokenVocabulary {
             if is_root {
                 root_tokens.push(token_id);
             }
-
-            token_id += 1;
         }
 
         VocabTrie {

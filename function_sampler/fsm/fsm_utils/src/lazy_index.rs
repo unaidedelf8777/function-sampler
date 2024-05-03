@@ -1,4 +1,3 @@
-
 use pyo3::prelude::*;
 
 use std::collections::BTreeMap;
@@ -11,6 +10,10 @@ use crate::{
     tokenizer_index::create_fsm_index_end_to_end_parallel,
     types::{FSMInfo, TokenVocabulary},
 };
+
+use std::time::Instant;
+
+pub(crate) type StateNotifierMap = Arc<Mutex<BTreeMap<u32, Arc<(Mutex<bool>, Condvar)>>>>;
 
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -38,7 +41,7 @@ pub struct LazyFSMIndex {
     fsm_info: Arc<FSMInfo>,
 
     // for notifying waiters when a state is finished.
-    state_notifiers: Arc<Mutex<BTreeMap<u32, Arc<(Mutex<bool>, Condvar)>>>>,
+    state_notifiers: StateNotifierMap,
 
     /// bool indicator, just so we dont need to manually iterate
     /// over the notifiers to check if they are all finished.
@@ -55,9 +58,10 @@ impl LazyFSMIndex {
         let fsm_info_arc_clone = Arc::clone(&fsm_info_arc);
         let vocabulary_arc = Arc::new(vocabulary);
         let results = Arc::new(Mutex::new(BTreeMap::<u32, BTreeMap<u32, u32>>::new()));
-        let state_notifiers = Arc::new(Mutex::new(
-            BTreeMap::<u32, Arc<(Mutex<bool>, Condvar)>>::new(),
-        ));
+        let state_notifiers: StateNotifierMap = Arc::new(Mutex::new(BTreeMap::<
+            u32,
+            Arc<(Mutex<bool>, Condvar)>,
+        >::new()));
         let state_notifiers_clone = Arc::clone(&state_notifiers);
 
         let computing_finished = Arc::new(Mutex::new(false));
@@ -69,25 +73,27 @@ impl LazyFSMIndex {
 
         // Start the computation in a new thread
         thread::spawn(move || {
+            let start_time = Instant::now();
             create_fsm_index_end_to_end_parallel(
                 &fsm_info_arc,
                 &vocabulary_arc,
                 &results_clone,
                 &state_notifiers_clone,
             );
+            println!("Time to compute: {:?}", start_time.elapsed());
             *computing_finished_clone.lock().unwrap() = true;
         });
 
         let first_state = fsm_info_arc_clone.initial;
 
-        return LazyFSMIndex {
+        LazyFSMIndex {
             states_to_token_maps: results,
             eos_token_id,
             fsm_info: fsm_info_arc_clone,
             computing_finished,
-            first_state: first_state,
+            first_state,
             state_notifiers,
-        };
+        }
     }
 }
 
@@ -108,10 +114,11 @@ impl LazyFSMIndex {
         // If the state is not found, find or create a notifier and wait
         let notifier = {
             let mut notifiers = self.state_notifiers.lock().unwrap();
-            notifiers
-                .entry(state)
-                .or_insert_with(|| Arc::new((Mutex::new(false), Condvar::new())))
-                .clone()
+            Arc::clone(
+                notifiers
+                    .entry(state)
+                    .or_insert_with(|| Arc::new((Mutex::new(false), Condvar::new()))),
+            )
         };
 
         // Access the tuple inside the Arc correctly
@@ -128,7 +135,6 @@ impl LazyFSMIndex {
     }
 
     pub fn next_state(&self, state: i32, token_id: u32) -> Option<i32> {
-
         // check if they are alias states first ( -1, or 0 )
         // state 0 is alias for the first state
         // -1 alias for the last state.
@@ -137,15 +143,16 @@ impl LazyFSMIndex {
             return Some(-1);
         }
 
-
-
         // Check if the token ID is the end-of-sequence or the state is a final state
         if token_id == self.eos_token_id || self.fsm_info.finals.contains(&(state as u32)) {
             return Some(-1);
         }
 
-        let current_state = if state == 0 { self.first_state } else { state as u32 };
-
+        let current_state = if state == 0 {
+            self.first_state
+        } else {
+            state as u32
+        };
 
         // Attempt to find the next state using the get_state_map method
         let token_map = self.get_state_map(current_state);
@@ -161,11 +168,7 @@ impl LazyFSMIndex {
         // return state == self.final_state
 
         // Check if the state is the "final" or invalid state
-        if state == -1 || self.fsm_info.finals.contains(&(state as u32)) {
-            return true;
-        } else {
-            return false;
-        }
+        state == -1 || self.fsm_info.finals.contains(&(state as u32))
     }
 
     pub fn is_computing_finished(&self) -> bool {

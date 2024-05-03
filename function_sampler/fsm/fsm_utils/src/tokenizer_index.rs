@@ -17,8 +17,8 @@ use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Condvar, Mutex};
 
+use crate::lazy_index::StateNotifierMap;
 use crate::types::{FSMInfo, TokenVocabulary, VocabTrie, VocabTrieBuilder};
-
 use crate::{lazy_index::LazyFSMIndex, types::PyFSMInfo};
 use std::convert::TryFrom;
 
@@ -42,7 +42,12 @@ use crate::types::build_dfa;
 /// If a substring matches and leads to a state that is a final state, it records this position. Depending on the `full_match` flag,
 /// it may return early or continue to process until all substrings are attempted. The function is sensitive to the ordering of characters
 /// and transitions, ensuring that the longest possible matches are considered first.
-fn walk_fsm(fsm_info: &FSMInfo, input_string: &str, start_state: u32, full_match: bool) -> Vec<u32> {
+fn walk_fsm(
+    fsm_info: &FSMInfo,
+    input_string: &str,
+    start_state: u32,
+    full_match: bool,
+) -> Vec<u32> {
     let mut state = start_state;
     let mut accepted_states = Vec::new();
     let mut last_final_idx: Option<usize> = None;
@@ -66,15 +71,12 @@ fn walk_fsm(fsm_info: &FSMInfo, input_string: &str, start_state: u32, full_match
 
             accepted_states.push(state);
         } else {
-            // If no new state or no valid transition key, handle as per the Python code when `new_state is None`
-            if !full_match && last_final_idx.is_some() {
-                return accepted_states
-                    .into_iter()
-                    .take(last_final_idx.unwrap())
-                    .collect();
+            if !full_match {
+                if let Some(last_final_index) = last_final_idx {
+                    return accepted_states.into_iter().take(last_final_index).collect();
+                }
             }
-
-            return Vec::new(); // Early return with an empty list if full match is required or no final state has been reached.
+            return Vec::new(); // Returns an empty vector as default, covering all other cases.
         }
     }
 
@@ -154,12 +156,12 @@ pub fn create_fsm_index_end_to_end_parallel(
     fsm_info: &Arc<FSMInfo>,
     vocabulary: &Arc<TokenVocabulary>,
     return_to: &Arc<Mutex<BTreeMap<u32, BTreeMap<u32, u32>>>>,
-    state_notifiers: &Arc<Mutex<BTreeMap<u32, Arc<(Mutex<bool>, Condvar)>>>>,
+    state_notifiers: &StateNotifierMap,
 ) {
     let vocab_trie = Arc::new(vocabulary.to_vocab_trie());
     fsm_info.states.par_iter().for_each(|&start_state| {
         let token_ids_end_states =
-            state_scan_tokens(&fsm_info, &vocab_trie, &vocabulary, start_state);
+            state_scan_tokens(fsm_info, &vocab_trie, vocabulary, start_state);
 
         let mut map = BTreeMap::new();
         for &(token_id, end_state) in &token_ids_end_states {
@@ -170,15 +172,17 @@ pub fn create_fsm_index_end_to_end_parallel(
         {
             let mut return_to_locked = return_to.lock().unwrap();
             return_to_locked.insert(start_state, map);
+            drop(return_to_locked);
         }
 
         // Retrieve the notifier for the current state and notify all waiting threads
         let notifier = {
             let mut notifiers = state_notifiers.lock().unwrap();
-            notifiers
-                .entry(start_state)
-                .or_insert_with(|| Arc::new((Mutex::new(false), Condvar::new())))
-                .clone()
+            Arc::<(std::sync::Mutex<bool>, std::sync::Condvar)>::clone(
+                notifiers
+                    .entry(start_state)
+                    .or_insert_with(|| Arc::new((Mutex::new(false), Condvar::new()))),
+            )
         };
 
         // Set the state to done and notify all waiters
@@ -207,11 +211,10 @@ pub fn create_fsm_index_end_to_end_py(
     vocabulary: TokenVocabulary,
     eos_token_id: u32,
 ) -> LazyFSMIndex {
-    let results = py.allow_threads(move || {
+    py.allow_threads(move || {
         let fsm_info = FSMInfo::try_from(&py_fsm_info).unwrap();
-        return LazyFSMIndex::new(fsm_info, vocabulary, eos_token_id);
-    });
-    return results;
+        LazyFSMIndex::new(fsm_info, vocabulary, eos_token_id)
+    })
 }
 
 #[cfg(feature = "e2e_experimental")]
