@@ -1,6 +1,6 @@
 import torch
 from .logger import get_logger
-from .fsm import RegexFSM, FsmTokenizer
+from .fsm import FsmTokenizer, create_fsm_index_tokenizer
 from .json import build_regex_from_schema
 from json import dumps as json_dumps
 from transformers import PreTrainedTokenizer
@@ -61,7 +61,7 @@ def compute_fsm(tokenizer: FsmTokenizer, schema):
         tokenizer = FsmTokenizer(tokenizer)
 
     regex = build_regex_from_schema(json_dumps(schema))
-    fsm = RegexFSM(regex, tokenizer)
+    fsm, _ = create_fsm_index_tokenizer(regex, tokenizer)
     return fsm
 
 

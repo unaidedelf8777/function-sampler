@@ -1,13 +1,15 @@
-from typing import TYPE_CHECKING, Dict, List, Set, Tuple
+from typing import TYPE_CHECKING, Dict, List, Set, Tuple, NewType
 
 import numpy as np
 from interegular.fsm import FSM, Alphabet, anything_else
+from interegular import parse_pattern
 from .fsm_utils import create_fsm_index_end_to_end
 from .utils import reduced_vocabulary
 
 if TYPE_CHECKING:
     from .tokenizer_fsm_patch import Tokenizer
 
+FSMState = NewType("FSMState", int)
 
 class BetterAlphabet(Alphabet):
     def __init__(self, *args, **kwargs):
@@ -197,9 +199,8 @@ def make_deterministic_fsm(fsm: FSM) -> Tuple[BetterFSM, Dict[int, int]]:
 
     return new_fsm, old_to_new_states
 
-
 def create_fsm_index_tokenizer(
-    fsm: BetterFSM,
+    pattern: str,
     tokenizer: "Tokenizer",
 ) -> Tuple[Dict[int, Dict[int, int]], Set[int]]:
     """Construct an FMS index from a tokenizer.
@@ -211,9 +212,10 @@ def create_fsm_index_tokenizer(
         `fsm` needs to be deterministically ordered so that future caching makes sense.
 
     """
+    fsm, _ = make_deterministic_fsm(parse_pattern(pattern).to_fsm().reduce())
     vocabulary, empty_token_ids = reduced_vocabulary(tokenizer)
 
     fsm_info = fsm.fsm_info
     # rust impl expects generic types, so just cast them.
-    states_to_token_subsets = create_fsm_index_end_to_end(fsm_info, dict(vocabulary))  # type: ignore
-    return states_to_token_subsets, empty_token_ids
+    lazy_fsm_index = create_fsm_index_end_to_end(fsm_info, dict(vocabulary), tokenizer.eos_token_id)  # type: ignore
+    return lazy_fsm_index, empty_token_ids

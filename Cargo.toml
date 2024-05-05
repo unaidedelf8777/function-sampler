@@ -10,9 +10,26 @@ path = "function_sampler/fsm/fsm_utils/src/lib.rs"
 
 # Dependencies for this specific package
 [dependencies]
+regex-automata = { git = "https://github.com/unaidedelf8777/regex.git", rev = "855b023e2d7c88722dfb0df8c669cda597604260" }
 pyo3 = { version = "0.21.1", features = ["extension-module"] }
 rayon = "1.10.0"
+rustc-hash = "1.1.0"
+lazy_static = "1.4.0"
+mimalloc = "0.1.41"
+dashmap = { version = "5.5.3", features = ["inline"] }
+
 
 
 [profile.release]
 opt-level = 3
+lto = true
+codegen-units = 1
+# make sure to strip any debug info from binary
+# this way it loads to python faster!
+strip = true
+panic = 'abort'
+
+
+[features]
+default = []
+e2e_experimental = []
