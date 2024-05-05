@@ -61,24 +61,6 @@ jobs:
           name: wheels-${{ runner.os }}-${{ matrix.platform.target }}
           path: dist/*.whl
 
-  sdist:
-    needs: check-rust
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Build source distribution
-        run: |
-          python -m pip install --upgrade pip setuptools setuptools_rust wheel
-          python setup.py sdist
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
-        with:
-          name: source-dist
-          path: dist/*.tar.gz
-
   pypi-publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
