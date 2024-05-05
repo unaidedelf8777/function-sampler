@@ -100,21 +100,21 @@ def test_benchmark_compile_fsm():
             print("starting timer")
             start_time = time.perf_counter()
             fsm, empty_token_ids = create_fsm_index_tokenizer(pattern, tokenizer)
-            states_to_subsets = fsm.get_states_to_token_subsets()
+            
             end_time = time.perf_counter()
             computation_time = end_time - start_time
             total_time += computation_time
-
-            # Debug prints
-            is_states_to_token_subsets_sane = len(states_to_subsets) > 25  # non-specific, but less than 25 keys it's probably wrong.
-            print(f"Computation sane? : {is_states_to_token_subsets_sane}")
+            fsm.get_states_to_token_subsets()
+            
             print(fsm)
             print(f"Time taken for Rust: {computation_time} seconds")
             print("====================================")
             print(f"first state: {0}")
             # Uncomment the following line if the decoding function and the `allowed_token_ids` method are correctly defined and relevant
-            # print(f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(0)]}")
+            print(f"initial tokens: {[tokenizer.decode([x])[0] for x in fsm.allowed_token_ids(0) if len(fsm.allowed_token_ids(0)) <= 10]}")
+            
             print("====================================")
+            time.sleep(0.5)
 
         average_time = total_time / iterations
         print("************************************")

@@ -5,7 +5,7 @@ use regex_automata::{
     Anchored,
 };
 
-use rustc_hash::FxHashMap;
+use std::sync::Arc;
 
 use std::collections::{BTreeMap, BTreeSet};
 /// since pyo3 cant convert to BTreeMap and BTreeSet
@@ -269,60 +269,89 @@ impl FSMInfo {
 /// - **`parent_children_map`**: Maps a token prefix ID to a vector of child token IDs, enabling quick exploration of possible token continuations.
 /// - **`idx_to_token_str`**: Provides an index-based lookup from a token ID to the corresponding token string.
 /// - **`token_str_to_idx`**: Maps a token string to its unique ID, facilitating fast conversions from strings to indices.
+/// VocabTrie is designed for efficient indexing and fast retrieval of tokens,
+/// optimized for concurrent read access.
 #[derive(Clone)]
-pub(crate) struct VocabTrie {
-    pub parent_children_map: FxHashMap<u32, Vec<u32>>, // Mapping from token prefix ID to children token IDs
-    pub idx_to_token_str: Vec<String>,                 // Mapping from token ID to token string
-    // pub token_str_to_idx: BTreeMap<String, u32>,   // Mapping from token string to token ID
-    pub root_tokens: Vec<u32>, // List of token indices that have no prefixes
+pub struct VocabTrie {
+    // A sorted vector of tuples (token ID, list of children token IDs) for efficient searching.
+    parent_children_map: Arc<Vec<(u32, Vec<u32>)>>,
+    // Index-based lookup from token ID to the corresponding token string.
+    idx_to_token_str: Arc<Vec<String>>,
+    // List of root token indices that have no prefixes, optimized for quick access.
+    root_tokens: Arc<Vec<u32>>,
+}
+
+impl VocabTrie {
+    /// Efficiently finds the children of a given token index using binary search.
+    /// Returns an option containing a reference to the children vector if found.
+    pub fn find_children(&self, token_idx: u32) -> Option<&[u32]> {
+        self.parent_children_map
+            .binary_search_by_key(&token_idx, |&(id, _)| id)
+            .ok()
+            .map(|index| &self.parent_children_map[index].1[..])
+    }
+
+    /// Retrieves a token string by its index.
+    pub fn get_token(&self, index: u32) -> Option<&String> {
+        self.idx_to_token_str.get(index as usize)
+    }
+
+    /// Retrieves a reference to the vector of root token indices.
+    pub fn get_root_tokens(&self) -> &Vec<u32> {
+        &self.root_tokens
+    }
 }
 /// `VocabTrieBuilder` is a trait implemented for `TokenVocabulary` that extends its functionality to include the generation of a `VocabTrie`.
 /// This allows any `TokenVocabulary` instance to directly create a trie structure tailored for efficient token handling in FSM operations.
+/// Trait for building a VocabTrie from a TokenVocabulary.
 pub trait VocabTrieBuilder {
     fn to_vocab_trie(&self) -> VocabTrie;
 }
 
+/// Implementation of the VocabTrieBuilder for TokenVocabulary.
 impl VocabTrieBuilder for TokenVocabulary {
     fn to_vocab_trie(&self) -> VocabTrie {
-        let mut parent_children_map = FxHashMap::default();
-        let mut idx_to_token_str = Vec::new();
-        let mut token_str_to_idx = FxHashMap::default();
-        let mut root_tokens = Vec::new();
+        let mut parent_children_map: Vec<(u32, Vec<u32>)> = Vec::new();
+        let mut idx_to_token_str: Vec<String> = Vec::new();
+        let mut token_str_to_idx: BTreeMap<String, u32> = BTreeMap::new();
+        let mut root_tokens: Vec<u32> = Vec::new();
 
-        for (token_id, (token, _)) in (0_u32..).zip(self.iter()) {
+        let mut token_id: u32 = 0;
+        for (token, _) in self.iter() {
             idx_to_token_str.push(token.clone());
             token_str_to_idx.insert(token.clone(), token_id);
 
-            // Populate parent_children_map with prefixes
+            // Determine if the token is a root token and manage prefixes
+            let char_indices: Vec<usize> = token.char_indices().map(|(index, _)| index).collect();
             let mut is_root = true;
-            // Use char_indices to ensure we handle multi-byte characters correctly
-            let mut char_indices: Vec<usize> =
-                token.char_indices().map(|(index, _)| index).collect();
-            // Include the end of the string
-            char_indices.push(token.len());
-
             for i in 0..char_indices.len() - 1 {
                 let prefix = &token[..char_indices[i]];
-                if i < char_indices.len() - 1 && self.contains_key(prefix) {
+                if self.contains_key(prefix) {
                     let prefix_id = *token_str_to_idx.get(prefix).unwrap();
-                    parent_children_map
-                        .entry(prefix_id)
-                        .or_insert_with(Vec::new)
-                        .push(token_id);
+                    if let Some(entry) = parent_children_map
+                        .iter_mut()
+                        .find(|entry| entry.0 == prefix_id)
+                    {
+                        entry.1.push(token_id);
+                    } else {
+                        parent_children_map.push((prefix_id, vec![token_id]));
+                    }
                     is_root = false;
                 }
             }
-
             if is_root {
                 root_tokens.push(token_id);
             }
+            token_id += 1;
         }
 
+        // Ensure the parent_children_map is sorted by token ID for efficient binary search
+        parent_children_map.sort_by_key(|&(id, _)| id);
+
         VocabTrie {
-            parent_children_map,
-            idx_to_token_str,
-            // token_str_to_idx,
-            root_tokens,
+            parent_children_map: Arc::new(parent_children_map),
+            idx_to_token_str: Arc::new(idx_to_token_str),
+            root_tokens: Arc::new(root_tokens),
         }
     }
 }

@@ -11,6 +11,8 @@ use crate::{
     types::{FSMInfo, TokenVocabulary},
 };
 
+use dashmap::DashMap;
+
 use std::time::Instant;
 
 pub(crate) type StateNotifierMap = Arc<Mutex<BTreeMap<u32, Arc<(Mutex<bool>, Condvar)>>>>;
@@ -24,7 +26,7 @@ pub struct LazyFSMIndex {
     /// the mapping of states to token subsets from the tokenizer.
     /// this is an interpreted version of the FSM info.
     /// interpreted according to the token vocabulary.
-    states_to_token_maps: Arc<Mutex<BTreeMap<u32, BTreeMap<u32, u32>>>>,
+    states_to_token_maps: Arc<DashMap<u32, BTreeMap<u32, u32>>>,
 
     /// First state of the FSM
     first_state: u32,
@@ -54,10 +56,11 @@ pub struct LazyFSMIndex {
 
 impl LazyFSMIndex {
     pub fn new(fsm_info: FSMInfo, vocabulary: TokenVocabulary, eos_token_id: u32) -> Self {
+        let start_time = Instant::now();
         let fsm_info_arc = Arc::new(fsm_info);
         let fsm_info_arc_clone = Arc::clone(&fsm_info_arc);
         let vocabulary_arc = Arc::new(vocabulary);
-        let results = Arc::new(Mutex::new(BTreeMap::<u32, BTreeMap<u32, u32>>::new()));
+        let results = Arc::new(DashMap::<u32, BTreeMap<u32, u32>>::new());
         let state_notifiers: StateNotifierMap = Arc::new(Mutex::new(BTreeMap::<
             u32,
             Arc<(Mutex<bool>, Condvar)>,
@@ -73,19 +76,19 @@ impl LazyFSMIndex {
 
         // Start the computation in a new thread
         thread::spawn(move || {
-            let start_time = Instant::now();
             create_fsm_index_end_to_end_parallel(
                 &fsm_info_arc,
                 &vocabulary_arc,
                 &results_clone,
                 &state_notifiers_clone,
             );
-            println!("Time to compute: {:?}", start_time.elapsed());
+
             *computing_finished_clone.lock().unwrap() = true;
         });
 
         let first_state = fsm_info_arc_clone.initial;
 
+        println!("Time to return LazyFSMIndex: {:?}", start_time.elapsed());
         LazyFSMIndex {
             states_to_token_maps: results,
             eos_token_id,
@@ -101,17 +104,11 @@ impl LazyFSMIndex {
 
 #[pymethods]
 impl LazyFSMIndex {
-    /// Retrieves the state map for a given state, waiting if it's not immediately available.
-    fn get_state_map(&self, state: u32) -> Option<BTreeMap<u32, u32>> {
-        {
-            // First attempt to get the state map without waiting
-            let state_map_lock = self.states_to_token_maps.lock().unwrap();
-            if let Some(token_map) = state_map_lock.get(&state) {
-                return Some(token_map.clone());
-            }
-        } // Explicitly drop the lock
+    pub fn get_state_map(&self, state: u32) -> Option<BTreeMap<u32, u32>> {
+        if let Some(token_map) = self.states_to_token_maps.get(&state) {
+            return Some(token_map.clone());
+        }
 
-        // If the state is not found, find or create a notifier and wait
         let notifier = {
             let mut notifiers = self.state_notifiers.lock().unwrap();
             Arc::clone(
@@ -121,17 +118,15 @@ impl LazyFSMIndex {
             )
         };
 
-        // Access the tuple inside the Arc correctly
-        let done_lock = &Arc::clone(&notifier).0;
-        let cvar = &Arc::clone(&notifier).1;
+        let (done_lock, cvar) = &*notifier;
         let mut done = done_lock.lock().unwrap();
         while !*done {
             done = cvar.wait(done).unwrap();
         }
 
-        // Try again to fetch the state map after being notified
-        let state_map_lock = self.states_to_token_maps.lock().unwrap();
-        state_map_lock.get(&state).cloned()
+        self.states_to_token_maps
+            .get(&state)
+            .map(|ref_map| ref_map.clone()) // already know it exists, but compiler whines so this fixes.
     }
 
     pub fn next_state(&self, state: i32, token_id: u32) -> Option<i32> {
@@ -176,15 +171,17 @@ impl LazyFSMIndex {
     }
 
     pub fn get_states_to_token_subsets(&self) -> BTreeMap<u32, BTreeMap<u32, u32>> {
-        // we first need to wait for the computation to finish.
-        // after computation is finished, then we can return it.
-        // this will block the thread until we can return the full result.
+        // Wait for the computation to finish
         while !self.is_computing_finished() {
             // Sleep for a short time to avoid busy waiting
             thread::sleep(std::time::Duration::from_millis(2));
         }
-        // finished. return a clone.
-        self.states_to_token_maps.lock().unwrap().clone()
+
+        // Once computation is finished, construct a BTreeMap from the DashMap
+        self.states_to_token_maps
+            .iter()
+            .map(|entry| (*entry.key(), entry.value().clone()))
+            .collect()
     }
 
     pub fn allowed_token_ids(&self, state: i32) -> Vec<i32> {

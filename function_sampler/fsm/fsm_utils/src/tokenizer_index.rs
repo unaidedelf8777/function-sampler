@@ -20,7 +20,10 @@ use std::sync::{Arc, Condvar, Mutex};
 use crate::lazy_index::StateNotifierMap;
 use crate::types::{FSMInfo, TokenVocabulary, VocabTrie, VocabTrieBuilder};
 use crate::{lazy_index::LazyFSMIndex, types::PyFSMInfo};
+use dashmap::DashMap;
 use std::convert::TryFrom;
+
+use std::time::Instant;
 
 #[cfg(feature = "e2e_experimental")]
 use crate::types::build_dfa;
@@ -110,26 +113,26 @@ fn state_scan_tokens(
     start_state: u32,
 ) -> BTreeSet<(u32, u32)> {
     let mut results = BTreeSet::new();
-    let mut stack: Vec<u32> = vocab_trie.root_tokens.clone();
+    // Initialize a local stack with a copy of the indices from root_tokens
+    let mut stack: Vec<u32> = vocab_trie.get_root_tokens().clone();
 
-    // Process the tokens using the stack
+    // Process the tokens using the local stack
     while let Some(token_idx) = stack.pop() {
-        let token = &vocab_trie.idx_to_token_str[token_idx as usize];
-        let state_seq = walk_fsm(fsm_info, token, start_state, false);
+        if let Some(token) = vocab_trie.get_token(token_idx) {
+            let state_seq = walk_fsm(fsm_info, token, start_state, false);
 
-        if state_seq.len() == token.len() {
-            if let Some(token_ids) = vocabulary.get(token) {
-                let last_state = *state_seq.last().unwrap(); // Safe to unwrap because we check length == token.len()
-                for &token_id in token_ids {
-                    results.insert((token_id, last_state));
+            if state_seq.len() == token.len() {
+                if let Some(token_ids) = vocabulary.get(token) {
+                    let last_state = *state_seq.last().unwrap(); // Safe to unwrap because we check length == token.len()
+                    for &token_id in token_ids {
+                        results.insert((token_id, last_state));
+                    }
                 }
             }
-        }
 
-        // Always add successors to the stack
-        if let Some(next_token_idxs) = vocab_trie.parent_children_map.get(&token_idx) {
-            for &next_token_idx in next_token_idxs {
-                stack.push(next_token_idx);
+            // Always add successors to the stack
+            if let Some(next_token_idxs) = vocab_trie.find_children(token_idx) {
+                stack.extend(next_token_idxs.iter().cloned()); // Clone here is necessary to extend the stack
             }
         }
     }
@@ -155,7 +158,7 @@ fn state_scan_tokens(
 pub fn create_fsm_index_end_to_end_parallel(
     fsm_info: &Arc<FSMInfo>,
     vocabulary: &Arc<TokenVocabulary>,
-    return_to: &Arc<Mutex<BTreeMap<u32, BTreeMap<u32, u32>>>>,
+    return_to: &Arc<DashMap<u32, BTreeMap<u32, u32>>>,
     state_notifiers: &StateNotifierMap,
 ) {
     let vocab_trie = Arc::new(vocabulary.to_vocab_trie());
@@ -170,9 +173,7 @@ pub fn create_fsm_index_end_to_end_parallel(
 
         // Lock the mutex to access the map and insert the new state map
         {
-            let mut return_to_locked = return_to.lock().unwrap();
-            return_to_locked.insert(start_state, map);
-            drop(return_to_locked);
+            return_to.insert(start_state, map);
         }
 
         // Retrieve the notifier for the current state and notify all waiting threads
@@ -213,7 +214,10 @@ pub fn create_fsm_index_end_to_end_py(
 ) -> LazyFSMIndex {
     py.allow_threads(move || {
         let fsm_info = FSMInfo::try_from(&py_fsm_info).unwrap();
-        LazyFSMIndex::new(fsm_info, vocabulary, eos_token_id)
+        let st = Instant::now();
+        let lazy_index = LazyFSMIndex::new(fsm_info, vocabulary, eos_token_id);
+        println!("time to return lazy index: {:?}", st.elapsed());
+        lazy_index
     })
 }
 
