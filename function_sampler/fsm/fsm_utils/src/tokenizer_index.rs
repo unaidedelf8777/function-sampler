@@ -48,9 +48,9 @@ use crate::types::build_dfa;
 fn walk_fsm(
     fsm_info: &FSMInfo,
     input_string: &str,
-    start_state: i64,
+    start_state: u32,
     full_match: bool,
-) -> Vec<i64> {
+) -> Vec<u32> {
     let mut state = start_state;
     let mut accepted_states = Vec::new();
     let mut last_final_idx: Option<usize> = None;
