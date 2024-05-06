@@ -42,8 +42,9 @@ pub struct PyFSMInfo {
     transitions: HashMap<(u32, u32), u32>,
     //#[pyo3(item("trans_key_to_states"))]
     //trans_key_to_states: HashMap<u32, Vec<u32>>,
-    //#[pyo3(item("alphabet_anything_value"))]
-    //alphabet_anything_value: u32,
+    #[pyo3(item("alphabet_anything_value"))]
+    alphabet_anything_value: u32,
+
     #[pyo3(item("alphabet_symbol_mapping"))]
     alphabet_symbol_mapping: HashMap<String, u32>,
 }
@@ -80,11 +81,14 @@ impl TryFrom<&PyFSMInfo> for FSMInfo {
             states.insert(*to);
         }
 
+        let alphabet_anything_value = py_info.alphabet_anything_value;
+
         Ok(FSMInfo {
             initial,
             finals,
             transitions,
             alphabet_symbol_mapping,
+            alphabet_anything_value,
             states,
         })
     }
@@ -105,6 +109,8 @@ pub struct FSMInfo {
     /// The alphabet mapping.
     /// key is a String representing the input, value is its u32 identifier / transition key.
     pub alphabet_symbol_mapping: BTreeMap<String, u32>,
+
+    pub alphabet_anything_value: u32,
     pub states: BTreeSet<u32>,
 }
 
