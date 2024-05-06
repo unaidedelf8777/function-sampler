@@ -322,7 +322,7 @@ class ToolCallSampler(LogitsProcessor):
                             self.first_fsm_token = True
                         else:
                             self.fsm = self.fsm_results[fsm_key]
-                            self.fsm_state = FSMState(self.fsm.first_state())
+                            self.fsm_state = FSMState(0)
                             self.first_fsm_token = True
 
                     if self.first_fsm_token:
