@@ -48,47 +48,58 @@ use crate::types::build_dfa;
 fn walk_fsm(
     fsm_info: &FSMInfo,
     input_string: &str,
-    start_state: u32,
+    start_state: i64,
     full_match: bool,
-) -> Vec<u32> {
+) -> Vec<i64> {
     let mut state = start_state;
     let mut accepted_states = Vec::new();
     let mut last_final_idx: Option<usize> = None;
 
-    for (i, symbol) in input_string.chars().enumerate() {
-        let symbol_str = symbol.to_string();
-        let trans_key = fsm_info.alphabet_symbol_mapping.get(&symbol_str);
+    let mut current_pos = 0;
+    let input_chars: Vec<char> = input_string.chars().collect();
 
-        // Handle case when there is no valid transition key (equivalent to `alphabet_symbol_mapping.get(symbol, alphabet_anything_value) is None`)
-        let new_state = match trans_key {
-            Some(key) => fsm_info.transitions.get(&(state, *key)),
-            None => None,
-        };
+    while current_pos < input_chars.len() {
+        let mut found = false;
 
-        if let Some(&new_state) = new_state {
-            state = new_state;
+        // Attempt to match longer substrings first, ensuring multi-character sequences are prioritized
+        for len in (1..=input_chars.len() - current_pos).rev() {
+            let possible_match: String =
+                input_chars[current_pos..current_pos + len].iter().collect();
 
-            if fsm_info.finals.contains(&state) {
-                last_final_idx = Some(i + 1);
-            }
-
-            accepted_states.push(state);
-        } else {
-            if !full_match {
-                if let Some(last_final_index) = last_final_idx {
-                    return accepted_states.into_iter().take(last_final_index).collect();
+            if let Some(&trans_key) = fsm_info.alphabet_symbol_mapping.get(&possible_match) {
+                if let Some(&new_state) = fsm_info.transitions.get(&(state, trans_key)) {
+                    state = new_state;
+                    if fsm_info.finals.contains(&state) {
+                        last_final_idx = Some(accepted_states.len() + 1);
+                    }
+                    accepted_states.push(state);
+                    current_pos += len; // Move past the matched substring
+                    found = true;
+                    break;
                 }
             }
-            return Vec::new(); // Returns an empty vector as default, covering all other cases.
+        }
+
+        if !found {
+            if !full_match && last_final_idx.is_some() {
+                // Non-full match and we've previously encountered a final state
+                return accepted_states
+                    .into_iter()
+                    .take(last_final_idx.unwrap())
+                    .collect();
+            } else {
+                // No match found, or a full match is required
+                return vec![];
+            }
         }
     }
 
-    // Final match condition to verify if the last index corresponds to a final state in full match mode
-    if full_match && last_final_idx.map_or(true, |idx| idx - 1 != input_string.chars().count()) {
-        Vec::new()
-    } else {
-        accepted_states
+    // Full match checks
+    if full_match && last_final_idx.map_or(true, |idx| idx != accepted_states.len()) {
+        return vec![]; // Full match required but last character didn't result in a final state
     }
+
+    accepted_states
 }
 
 /// This function scans a set of tokens against an FSM to determine the resulting states from a given start state.
