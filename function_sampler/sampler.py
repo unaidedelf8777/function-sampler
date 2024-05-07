@@ -333,8 +333,6 @@ class ToolCallSampler(LogitsProcessor):
                         self.fsm_state = self.fsm.next_state(
                             self.fsm_state, int(last_token)
                         )
-                        if self.fsm_state == -1:
-                            raise Exception("Final state achieved")
                         allowed_tokens = self.fsm.allowed_token_ids(self.fsm_state)
 
                     if allowed_tokens == [-2]:

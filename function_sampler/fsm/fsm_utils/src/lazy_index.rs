@@ -104,6 +104,8 @@ impl LazyFSMIndex {
 
 #[pymethods]
 impl LazyFSMIndex {
+
+
     pub fn get_state_map(&self, state: u32) -> Option<BTreeMap<u32, u32>> {
         if let Some(token_map) = self.states_to_token_maps.get(&state) {
             return Some(token_map.clone());
