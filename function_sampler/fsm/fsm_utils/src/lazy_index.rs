@@ -149,12 +149,20 @@ impl LazyFSMIndex {
             state as u32
         };
 
+        
+
         // Attempt to find the next state using the get_state_map method
-        let token_map = self.get_state_map(current_state);
-        token_map
+        self.get_state_map(current_state)
             .and_then(|map| map.get(&token_id).copied().map(|s| s as i32))
-            // if the token to next state pair is not found, return -1, this isnt something we can blindly repair.
-            // may as well just give up!
+            .map(|next_state| {
+                // If the next state is final, return -1
+                if self.is_final_state(next_state) {
+                    -1
+                } else {
+                    next_state
+                }
+            })
+            // If the token to next state pair is not found, return -1 (indicates no valid transition)
             .or(Some(-1))
     }
 
