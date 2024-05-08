@@ -93,7 +93,7 @@ jobs:
 
       - name: Publish package distributions to PyPI
         run: |
-          twine upload dist/*
+          twine upload dist/*.whl
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
