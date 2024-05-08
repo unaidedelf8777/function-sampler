@@ -4,7 +4,7 @@ from setuptools_rust import Binding, RustExtension
 
 metadata = {
     'name': "function-sampler",
-    'version': "0.1.5",
+    'version': "0.1.7",
     'description': "Function calling Logit Sampler",
     'long_description': "", 
     'authors': ["unaidedelf8777"],

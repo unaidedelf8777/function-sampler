@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ runner.os }}-${{ matrix.platform.target }}
-          path: dist/*.whl
+          path: dist/*manylinux*.whl 
 
   pypi-publish:
     name: Upload release to PyPI
@@ -93,7 +93,7 @@ jobs:
 
       - name: Publish package distributions to PyPI
         run: |
-          twine upload dist/*manylinux*.whl 
+          twine upload dist/*.whl
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
