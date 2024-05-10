@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  python: circleci/python@2
+  python: circleci/python@2.0
 
 workflows:
   version: 2
@@ -13,19 +13,7 @@ workflows:
               only: main
             tags:
               only: /v.*/
-      - build_aarch64:
-          filters:
-            branches:
-              only: main
-            tags:
-              only: /v.*/
-      - publish:
-          filters:
-            branches:
-              only: main
-            tags:
-              only: /v.*/
-              
+
 jobs:
   build_x86_64:
     machine:
@@ -47,26 +35,6 @@ jobs:
       - store_artifacts:
           path: wheel_output
 
-  build_aarch64:
-    machine:
-      image: ubuntu-2204:2022.04
-      arch: arm64
-    steps:
-      - checkout
-      - python/install:
-          python-version: "3.9"
-      - run:
-          name: Install cibuildwheel
-          command: python -m pip install cibuildwheel
-      - run:
-          name: Build wheels
-          command: cibuildwheel --output-dir wheel_output
-          environment:
-            CIBW_ARCHS: "aarch64"
-            CIBW_MANYLINUX_AARCH64_IMAGE: "unaidedelf/cibw_rust:aarch64"
-      - store_artifacts:
-          path: wheel_output
-
   publish:
     docker:
       - image: cimg/python:3.9
@@ -79,4 +47,3 @@ jobs:
             twine upload wheel_output/*.whl -u __token__ -p $PYPI_API_TOKEN
           environment:
             PYPI_API_TOKEN: ${PYPI_API_TOKEN}
-
