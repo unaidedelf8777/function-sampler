@@ -7,17 +7,18 @@ workflows:
   version: 2
   build-and-publish:
     jobs:
-      - build_x86_64:
+      - build_and_publish:
           filters:
             branches:
               only: main
             tags:
               only: /v.*/
 
+
 jobs:
   build_and_publish:
     machine:
-      image: ubuntu-2204:2022.04
+      image: ubuntu-2204:2024.04.4
     steps:
       - checkout
       - run:
@@ -35,7 +36,7 @@ jobs:
             CIBW_ARCHS: "x86_64"
             CIBW_MANYLINUX_X86_64_IMAGE: "unaidedelf/cibw_rust:x86_64"
             CIBW_SKIP: "*musllinux*"
-            
+
       - store_artifacts:
           path: wheel_output
       - run:
