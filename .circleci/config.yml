@@ -21,11 +21,8 @@ jobs:
       image: ubuntu-2204:2024.04.4
     steps:
       - checkout
-      - run:
-          name: Install Python
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y python3.9 python3-pip
+      - python/install:
+          version: "3.9"
       - run:
           name: Install cibuildwheel
           command: python3.9 -m pip install cibuildwheel
@@ -36,13 +33,12 @@ jobs:
             CIBW_ARCHS: "x86_64"
             CIBW_MANYLINUX_X86_64_IMAGE: "unaidedelf/cibw_rust:x86_64"
             CIBW_SKIP: "*musllinux*"
-
       - store_artifacts:
           path: wheel_output
       - run:
           name: Publish to PyPI
           command: |
-            pip install twine
+            python3.9 -m pip install twine
             twine upload wheel_output/*.whl -u __token__ -p $PYPI_API_TOKEN
           environment:
             PYPI_API_TOKEN: ${PYPI_API_TOKEN}
