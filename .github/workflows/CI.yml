@@ -1,4 +1,4 @@
-name: CI
+name: Build and Publish Wheels
 
 on:
   push:
@@ -6,100 +6,36 @@ on:
       - main
     tags:
       - 'v*'
-  workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
-  check-rust:
+  build_and_publish:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Check Rust Compiler and Cargo
-        run: |
-          rustc --version
-          cargo --version
+      - uses: actions/checkout@v2
 
-  build-and-test:
-
-    needs: check-rust
-    runs-on: ${{ matrix.platform.runner }}
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-latest
-            target: x86
-          - runner: ubuntu-latest
-            target: aarch64
-          - runner: ubuntu-latest
-            target: armv7
-          - runner: ubuntu-latest
-            target: s390x
-          - runner: ubuntu-latest
-            target: ppc64le
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v3
         with:
-          python-version: '3.10'
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
-      - name: Build and test
-        run: |
-          python -m pip install --upgrade pip setuptools setuptools_rust wheel
-          python setup.py bdist_wheel
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ runner.os }}-${{ matrix.platform.target }}
-          path: dist/*.whl
+          python-version: '3.9'
 
-  pypi-publish:
-    name: Upload release to PyPI
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-and-test]  # Ensure this job waits for others to finish
-    environment:
-      name: pypi
-      url: https://pypi.org/project/function-sampler/
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'  # Match the version used in building
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-
-      - name: Flatten distribution files
-        run: |
-          find dist -type f -name '*.whl' -exec mv {} dist/ \;
-
-      - name: Install Twine
-        run: |
-          python -m pip install --upgrade pip
-          pip install twine
-
-      - name: Publish package distributions to PyPI
-        run: |
-          twine upload dist/*.whl
+      - name: Build wheels
+        run: cibuildwheel --output-dir wheel_output
         env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+          CIBW_ARCHS: "auto"
 
+      - name: Upload wheels as artifacts (optional)
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels-x86_64
+          path: wheel_output/*.whl
 
-
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.4.2
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
 
 

@@ -6,7 +6,13 @@ Yes I know how messy this code is. I'll clean it up when I get the chance.
 
 import functools
 import time
-from typing import Any, Dict, List, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Union
+)
+
 from concurrent.futures import ThreadPoolExecutor
 
 import torch
@@ -14,9 +20,19 @@ from transformers import LogitsProcessor, PreTrainedTokenizer
 
 from .config import TokenMap
 from .config.config import ToolCallSamplerConfig
-from .fsm import FSMState, FsmTokenizer
+from .fsm import (
+    FSMState, 
+    FsmTokenizer
+)
+
 from .logger import get_logger
-from .utils import build_masks, bundle_sampling, tokenize_dicts, compute_fsm
+
+from .utils import (
+    build_masks,
+    bundle_sampling,
+    tokenize_dicts,
+    compute_fsm
+)
 
 logger = get_logger()
 
@@ -24,21 +40,6 @@ logger = get_logger()
 class ToolCallSampler(LogitsProcessor):
     """
     A logits processor designed to facilitate the generation and sampling of function calls and their arguments.
-
-    Attributes:
-        tokenizer (PreTrainedTokenizer): A tokenizer compatible with Hugging Face's Transformers library,
-            used for encoding and decoding text.
-        functions (List[Dict], optional): A list of dictionaries representing the available functions
-            and their metadata. Defaults to None.
-        config (Union[ToolCallSamplerConfig, Dict[str, Any]], optional): Configuration for the sampler,
-            either as a ToolCallSamplerConfig object or as a dictionary that can be parsed into one.
-            Defaults to None.
-
-    The class is initialized with a tokenizer for handling text encoding/decoding, a list of function
-    definitions for determining valid function calls and arguments, and a configuration object for
-    fine-tuning the sampling behavior. It extends the `LogitsProcessor` class from Hugging Face's
-    Transformers, enabling it to be integrated into the text generation pipeline to control the
-    likelihood of generating specific tokens based on the current context and predefined constraints.
     """
 
     def __init__(
@@ -46,82 +47,52 @@ class ToolCallSampler(LogitsProcessor):
         tokenizer: PreTrainedTokenizer,
         functions: List[Dict] = None,
         config: Union[ToolCallSamplerConfig, Dict[str, Any]] = None,
-        **kwargs,
+        **kwargs
     ):
         self.tokenizer = tokenizer
-        self.functions = functions
-
-        # If config is a dictionary or None, parse it with Pydantic model
-        if isinstance(config, dict) or config is None:
-            config = ToolCallSamplerConfig(**config or {}, **kwargs)
-        elif not isinstance(config, ToolCallSamplerConfig):
-            raise ValueError(
-                "config must be a ToolCallSamplerConfig instance or a dictionary"
-            )
-
-        self.config = config
-
-        self.open_func_token = (
-            self.config.open_func_token if self.config.open_func_token else "<function>"
-        )
-        self.close_func_token = (
-            self.config.open_func_token
-            if self.config.open_func_token
-            else "</function>"
-        )
-        self.generate_close_func_token = (
-            config.generate_close_func_token
-            if config.generate_close_func_token
-            else True
-        )
-        self.open_func_token_length = len(
-            self.tokenizer.encode(self.open_func_token, add_special_tokens=False)
-        )
-
-        logger.debug(self.open_func_token)
-        logger.debug(self.close_func_token)
-
-        self.end_on_function_call = self.config.end_on_function_call
-
+        self.functions = functions or []
+        self.config = self._parse_config(config, kwargs)
+        self._initialize_tokens()
         self.vocab_size = len(tokenizer)
-
-        self.json_tokens = (
-            self.config.json_tokens.model_dump()
-            if self.config.json_tokens
-            else TokenMap.build(tokenizer=tokenizer).model_dump()
-        )
-
-        #
-        # convert json_tokens dict into a dict with values of long tensors, instead of allowed token ids
-        self.token_masks = {}
-        build_masks(
-            tokenizer=self.tokenizer,
-            token_masks=self.token_masks,
-            json_tokens=self.json_tokens,
-            vocab_size=self.vocab_size,
-        )
-
-        # sampling flags and misc
-        self.identified_function = None
-
-        self.last_open_key_quote_index = -1
-
+        self.token_masks = self._build_token_masks()
         self.function_maps = tokenize_dicts(self.functions, self.tokenizer)
-
-        # we launch computation of all FSM's at the begining,
-        # if one is needed before it is finished, we block until it is done.
-        # otherwise, it should be ready by the time we need it.
         self.fsm_results = {}
         self.executor = ThreadPoolExecutor()
+        self._compute_all_fsms()
+        self._reset_sampling_state()
+        self._set_sampling_params()
 
-        self.fsm_tokenizer = FsmTokenizer(tokenizer)
+    def _parse_config(self, config, kwargs):
+        if isinstance(config, dict) or config is None:
+            return ToolCallSamplerConfig(**config or {}, **kwargs)
+        elif isinstance(config, ToolCallSamplerConfig):
+            return config
+        else:
+            raise ValueError("config must be a ToolCallSamplerConfig instance or a dictionary")
 
+    def _initialize_tokens(self):
+        config = self.config
+        self.open_func_token = config.open_func_token or "<tool_call>"
+        self.close_func_token = config.close_func_token or "</tool_call>"
+        self.generate_close_func_token = config.generate_close_func_token
+        self.end_on_function_call = config.end_on_function_call
+        self.open_func_token_length = len(self.tokenizer.encode(self.open_func_token, add_special_tokens=False))
+
+    def _build_token_masks(self):
+        json_tokens = self.config.json_tokens.model_dump() if self.config.json_tokens else TokenMap.build(self.tokenizer).model_dump()
+        token_masks = {}
+        build_masks(self.tokenizer, token_masks, json_tokens, self.vocab_size)
+        return token_masks
+
+    def _compute_all_fsms(self):
         for key, function in self.function_maps.items():
-            future = self.executor.submit(compute_fsm, self.fsm_tokenizer, function)
-            future.add_done_callback(
-                functools.partial(self.populate_fsm_result, key=key)
-            )
+            future = self.executor.submit(compute_fsm, FsmTokenizer(self.tokenizer), function)
+            future.add_done_callback(functools.partial(self._populate_fsm_result, key=key))
 
+    def _populate_fsm_result(self, future, key):
+        self.fsm_results[key] = future.result()
+
+    def _reset_sampling_state(self):
         self.next_tokens = []
         self.fsm = None
         self.fsm_state = FSMState(0)
@@ -134,21 +105,13 @@ class ToolCallSampler(LogitsProcessor):
         self.input_ids_split_idx = None
         self.total_time = 0
 
-        # Sampling params. these are only used when generating values for params / args.
-        # when not generating a value, they are ignored.
-        self.temperature = config.temperature if config.temperature else None
-        self.top_p = config.top_p if config.top_p else None
-        self.top_k = config.top_k if config.top_k else None
-        self.repetition_penalty = (
-            config.repetition_penalty if config.repetition_penalty else None
-        )
-
-    def populate_fsm_result(self, future, key):
-        # Callback function to populate the results dict upon future completion
-        self.fsm_results[key] = future.result()
+    def _set_sampling_params(self):
+        self.temperature = self.config.temperature
+        self.top_p = self.config.top_p
+        self.top_k = self.config.top_k
+        self.repetition_penalty = self.config.repetition_penalty
 
     def __del__(self):
-        # Ensure executor resources are freed when the instance is destroyed
         self.executor.shutdown(wait=False)
 
     def _determine_function(self, start_sequence):
@@ -169,7 +132,10 @@ class ToolCallSampler(LogitsProcessor):
             return None
 
     def _wait_for_fsm_result(self, key, timeout=None):
-        """Wait for the FSM result associated with `key` to be populated."""
+        """
+        Wait for the FSM result associated with `key` to be populated.
+        really only needed to prevent a key error if somehow the fsm isnt returned yet. 
+        """
         start_time = time.time()
         while key not in self.fsm_results:
             if timeout and (time.time() - start_time) > timeout:

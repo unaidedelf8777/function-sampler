@@ -1,5 +1,19 @@
+import os
+import tomlkit
 from setuptools import setup, find_packages
 from setuptools_rust import Binding, RustExtension
+
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def read_dependencies():
+    pyproject_path = os.path.join(CURRENT_DIR, 'pyproject.toml')
+
+    with open(pyproject_path, "r") as file:
+        data = tomlkit.parse(file.read())
+        dependencies = data["tool"]["poetry"]["dependencies"]
+        return dependencies
 
 
 metadata = {
@@ -20,8 +34,8 @@ metadata = {
 
 rust_extensions = [
     RustExtension(
-        f"function_sampler.fsm.fsm_utils",
-        f"./Cargo.toml",
+        "function_sampler.fsm.fsm_utils",
+        f"{CURRENT_DIR}/Cargo.toml",
         binding=Binding.PyO3,
         features=["default"],
         args=["--profile=release"]
@@ -31,7 +45,7 @@ rust_extensions = [
 setup(
     name=metadata['name'],
     version=metadata['version'],
-    author=metadata['authors'][0].split(" <")[0],  # Extracting name
+    author=metadata['authors'][0].split(" <")[0],
     author_email=metadata['author_email'],
     description=metadata['description'],
     long_description=open("README.md").read(),
@@ -43,6 +57,6 @@ setup(
     include_package_data=True,
     zip_safe=False,
     python_requires='>=3.9',
-    setup_requires=['setuptools_rust', 'wheel'],
+    setup_requires=["setuptools>=69.5.1", "wheel", "setuptools-rust>=1.9.0", "tomlkit>=0.12.5"],
     rust_extensions=rust_extensions,
 )

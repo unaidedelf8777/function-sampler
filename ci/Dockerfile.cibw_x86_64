@@ -1,0 +1,9 @@
+### Modified CI Build Wheels container to include the rust compiler.
+FROM quay.io/pypa/manylinux_2_28_x86_64
+
+
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y 
+
+ENV PATH="/root/.cargo/bin:/opt/rh/devtoolset-10/root/us/bin:/us/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+
