@@ -1,69 +1,82 @@
-# This config was automatically generated from your source code
-# Stacks detected: cicd:github-actions:.github/workflows,deps:python:.,deps:rust:.,file:setup.py:.,package_manager:poetry:.
 version: 2.1
+
 orbs:
   python: circleci/python@2
-jobs:
-  test-python:
-    # Install dependencies and run tests
-    docker:
-      - image: cimg/python:3.9-node
-    steps:
-      - checkout
-      - python/install-packages:
-          pkg-manager: pip-dist
-      - run:
-          name: Run tests
-          command: pytest --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
-      - store_test_results:
-          path: junit.xml
-  build-package:
-    # build python package
-    docker:
-      - image: cimg/python:3.9-node
-    steps:
-      - checkout
-      - run:
-          name: Create the ~/artifacts directory if it doesn't exist
-          command: mkdir -p ~/artifacts
-      - python/dist
-      - store_artifacts:
-          path: dist
-          destination: ~/artifacts
-  test-rust:
-    docker:
-      - image: cimg/rust:1.70
-    steps:
-      - checkout
-      - restore_cache:
-          key: cargo-{{ checksum "Cargo.lock" }}
-      - run:
-          command: cargo test
-      - save_cache:
-          key: cargo-{{ checksum "Cargo.lock" }}
-          paths:
-            - ~/.cargo
-  deploy:
-    # This is an example deploy job, not actually used by the workflow
-    docker:
-      - image: cimg/base:stable
-    steps:
-      # Replace this with steps to deploy to users
-      - run:
-          name: deploy
-          command: '#e.g. ./deploy.sh'
-      - run:
-          name: found github actions config
-          command: ':'
+
 workflows:
-  build-and-test:
+  version: 2
+  build-and-publish:
     jobs:
-      - test-python
-      - build-package:
-          requires:
-            - test-python
-            - test-rust
-      - test-rust
-    # - deploy:
-    #     requires:
-    #       - build-package
+      - build_x86_64:
+          filters:
+            branches:
+              only: main
+            tags:
+              only: /v.*/
+      - build_aarch64:
+          filters:
+            branches:
+              only: main
+            tags:
+              only: /v.*/
+      - publish:
+          filters:
+            branches:
+              only: main
+            tags:
+              only: /v.*/
+              
+jobs:
+  build_x86_64:
+    machine:
+      image: ubuntu-2204:2022.04
+      arch: amd64
+    steps:
+      - checkout
+      - python/install:
+          python-version: "3.9"
+      - run:
+          name: Install cibuildwheel
+          command: python -m pip install cibuildwheel
+      - run:
+          name: Build wheels
+          command: cibuildwheel --output-dir wheel_output
+          environment:
+            CIBW_ARCHS: "x86_64"
+            CIBW_MANYLINUX_X86_64_IMAGE: "unaidedelf/cibw_rust:x86_64"
+      - store_artifacts:
+          path: wheel_output
+
+  build_aarch64:
+    machine:
+      image: ubuntu-2204:2022.04
+      arch: arm64
+    steps:
+      - checkout
+      - python/install:
+          python-version: "3.9"
+      - run:
+          name: Install cibuildwheel
+          command: python -m pip install cibuildwheel
+      - run:
+          name: Build wheels
+          command: cibuildwheel --output-dir wheel_output
+          environment:
+            CIBW_ARCHS: "aarch64"
+            CIBW_MANYLINUX_AARCH64_IMAGE: "unaidedelf/cibw_rust:aarch64"
+      - store_artifacts:
+          path: wheel_output
+
+  publish:
+    docker:
+      - image: cimg/python:3.9
+    steps:
+      - checkout
+      - run:
+          name: Publish to PyPI
+          command: |
+            pip install twine
+            twine upload wheel_output/*.whl -u __token__ -p $PYPI_API_TOKEN
+          environment:
+            PYPI_API_TOKEN: ${PYPI_API_TOKEN}
+
