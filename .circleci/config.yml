@@ -30,10 +30,10 @@ jobs:
             source $BASH_ENV
       - run:
           name: Install cibuildwheel
-          command: python3.9 -m pip install cibuildwheel
+          command: python3 -m pip install cibuildwheel
       - run:
           name: Build wheels
-          command: python3.9 -m cibuildwheel --output-dir wheel_output
+          command: python3 -m cibuildwheel --output-dir wheel_output
           environment:
             CIBW_ARCHS: "x86_64"
             CIBW_MANYLINUX_X86_64_IMAGE: "unaidedelf/cibw_rust:x86_64"
