@@ -18,7 +18,6 @@ jobs:
   build_x86_64:
     machine:
       image: ubuntu-2204:2022.04
-      arch: amd64
     steps:
       - checkout
       - python/install:

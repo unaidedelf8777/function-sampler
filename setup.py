@@ -18,7 +18,7 @@ def read_dependencies():
 
 metadata = {
     'name': "function-sampler",
-    'version': "0.1.7",
+    'version': "0.1.8",
     'description': "Function calling Logit Sampler",
     'long_description': "", 
     'authors': ["unaidedelf8777"],
