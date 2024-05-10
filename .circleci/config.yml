@@ -44,6 +44,8 @@ jobs:
       - run:
           name: Publish to PyPI
           command: |
+            echo 'export PATH="/home/circleci/.local/bin:$PATH"' >> $BASH_ENV
+            source $BASH_ENV
             pip install twine
             twine upload wheel_output/*.whl -u __token__ -p $PYPI_API_TOKEN
           environment:
