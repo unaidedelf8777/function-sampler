@@ -19,10 +19,83 @@ By using Logit sampling and a Finite State Machine (FSM), Function Sampler guide
 
 ## Installation
 
-To install the `function-sampler` library, use the following command:
+Before installing the `function-sampler` library, you need to first ensure that the Rust programming language is installed on your system. Follow the installation instructions for your platform below, then continue to install the library from source.
+
+### Install Rust
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+1. Download and run the Rust installer from [rustup.rs](https://rustup.rs/).
+2. Follow the prompts to install Rust. This will also install `cargo`, Rust's package manager and build system.
+3. After installation, open a new command prompt and verify the installation by running:
+
+    ```bash
+    rustc --version
+    ```
+
+4. Add Rust to your system PATH manually if it's not done automatically by the installer. Usually, Rust is installed under `%USERPROFILE%\.cargo\bin`.
+5. If Rust is installed correctly, you should see the version number, commit hash, and commit date.
+</details>
+
+<details>
+<summary><strong>macOS</strong></summary>
+
+1. You can install Rust using the following command in your terminal:
+
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+
+2. Follow the instructions on the screen to complete the installation.
+3. After the installation is complete, restart your terminal and verify the installation by running:
+
+    ```bash
+    rustc --version
+    ```
+
+4. Rust installs its binaries in `~/.cargo/bin`. You may need to add this directory to your PATH using:
+
+    ```bash
+    echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bash_profile
+    ```
+
+5. If Rust is installed correctly, you should see the version number, commit hash, and commit date.
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+1. Use the following command in your terminal to install Rust:
+
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+
+2. Follow the on-screen instructions to complete the installation process.
+3. After completing the installation, source the Rust environment script:
+
+    ```bash
+    source $HOME/.cargo/env
+    ```
+
+5. Verify the installation by running:
+
+    ```bash
+    rustc --version
+    ```
+
+6. If Rust is installed correctly, you should see the version number, commit hash, and commit date.
+</details>
+
+### Install `function-sampler` from Source
+
+*Note*: Currently, until I can get the CI for PyPI sorted out, install from source is necessary.
 
 ```bash
-pip install function-sampler
+git clone https://github.com/unaidedelf8777/function-sampler.git
+cd function-sampler
+python setup.py install
 ```
 
 ## Usage
