@@ -24,7 +24,7 @@ jobs:
       - name: Build wheels
         run: cibuildwheel --output-dir wheel_output
         env:
-          CIBW_ARCHS: "auto"
+          CIBW_ARCHS: "x86_64"
 
       - name: Upload wheels as artifacts (optional)
         uses: actions/upload-artifact@v3
