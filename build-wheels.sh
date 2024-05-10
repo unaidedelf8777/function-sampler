@@ -3,7 +3,7 @@ set -ex
 
 # Prepare the environment
 export CIBW_PLATFORM=linux
-export CIBW_ARCHS="x86_64 aarch64"
+export CIBW_ARCHS="x86_64"
 export CIBW_MANYLINUX_X86_64_IMAGE="unaidedelf/cibw_rust:x86_64"
 export CIBW_MANYLINUX_AARCH64_IMAGE="unaidedelf/cibw_rust:aarch64"
 

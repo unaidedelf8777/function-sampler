@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  python: circleci/python@2.0
+  python: circleci/python@2.1.1
 
 workflows:
   version: 2
@@ -15,30 +15,29 @@ workflows:
               only: /v.*/
 
 jobs:
-  build_x86_64:
+  build_and_publish:
     machine:
       image: ubuntu-2204:2022.04
     steps:
       - checkout
-      - python/install:
-          python-version: "3.9"
+      - run:
+          name: Install Python
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y python3.9 python3-pip
       - run:
           name: Install cibuildwheel
-          command: python -m pip install cibuildwheel
+          command: python3.9 -m pip install cibuildwheel
       - run:
           name: Build wheels
-          command: cibuildwheel --output-dir wheel_output
+          command: python3.9 -m cibuildwheel --output-dir wheel_output
           environment:
             CIBW_ARCHS: "x86_64"
             CIBW_MANYLINUX_X86_64_IMAGE: "unaidedelf/cibw_rust:x86_64"
+            CIBW_SKIP: "*musllinux*"
+            
       - store_artifacts:
           path: wheel_output
-
-  publish:
-    docker:
-      - image: cimg/python:3.9
-    steps:
-      - checkout
       - run:
           name: Publish to PyPI
           command: |
