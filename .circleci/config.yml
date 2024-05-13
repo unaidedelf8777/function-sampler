@@ -79,7 +79,7 @@ jobs:
           command: python3 -m cibuildwheel --output-dir wheel_output
           environment:
             CIBW_ARCHS: "aarch64"
-            CIBW_MANYLINUX_X86_64_IMAGE: "unaidedelf/cibw_rust:aarch64"
+            CIBW_MANYLINUX_AARCH64_IMAGE: "unaidedelf/cibw_rust:aarch64"
             CIBW_SKIP: "*musllinux*"
 
       - store_artifacts:
