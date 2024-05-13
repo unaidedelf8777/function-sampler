@@ -46,7 +46,7 @@ jobs:
           command: |
             echo 'export PATH="/home/circleci/.local/bin:$PATH"' >> $BASH_ENV
             source $BASH_ENV
-            echo $PYPI_API_TOKEN
+            echo PYPI Token being used: $PYPI_API_TOKEN
             pip install twine
             twine upload wheel_output/*.whl -u __token__ -p $PYPI_API_TOKEN
           environment:
