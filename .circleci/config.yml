@@ -49,5 +49,4 @@ jobs:
             echo PYPI Token being used: $PYPI_API_TOKEN
             pip install twine
             twine upload wheel_output/*.whl -u __token__ -p $PYPI_API_TOKEN --verbose
-          environment:
-            PYPI_API_TOKEN: ${PYPI_API_TOKEN}
+
