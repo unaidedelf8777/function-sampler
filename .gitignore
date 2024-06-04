@@ -8,7 +8,7 @@ __pycache__/
 
 # Rust builds and crap
 function_sampler/fsm/lib/target
-
+wheelhouse/
 # Distribution / packaging
 .Python
 build/
